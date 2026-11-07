@@ -182,6 +182,7 @@ function installMock() {
     },
     platform: 'darwin',
     fullscreen: false,
+    backup: { hasPassphrase: false, hasGithubToken: false, running: false },
   };
 
   // ---------- chat ----------

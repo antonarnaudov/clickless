@@ -53,6 +53,9 @@ None in the repo or env. Provider API keys are entered in Settings → AI and st
 ## Personal data stays local
 This repo is public. Nobody's browsing data, profile files, screenshots of a real profile, names, places or personal projects go in it — not the maintainer's, not a tester's. Real profiles live in `<userData>` (`~/Library/Application Support/Clickless`) and are never copied into the repo. Tests use synthetic fixtures on `example.*` domains; mock and demo content in `src/renderer/mock.ts` and the docs use generic sites and names. Screenshots for the README come from a throwaway demo profile filled with generic content.
 
+## Releases
+Push a `v*` tag (with the maintainer's yes): `.github/workflows/release.yml` builds the DMGs/ZIPs on GitHub's macOS runner and attaches them to a **draft** release; the maintainer publishes it. Never upload builds made on a personal machine.
+
 ## Gotchas
 - **Key events need a focused page.** CDP key events are dropped while the window is in the background; `PageController.focusForKeys()` focuses the page's webContents first. Text goes through `Input.insertText` (works unfocused).
 - **Navigation waits** follow `did-start-navigation` → `did-navigate` (commit) → engine ping on the *new* document (`settle()`); pinging too early hits the old page.

@@ -15,6 +15,8 @@ You can take over at any moment, and the agent hands back to you for logins and 
 
 > Status: early preview (v0.1). macOS first; the code is cross-platform Electron but Windows/Linux builds aren't tested yet.
 
+**[Download for Mac](https://github.com/antonarnaudov/clickless/releases/latest)** · free, no account, everything stays on your Mac ([privacy](docs/PRIVACY.md)).
+
 ## Why another AI browser
 
 Agent browsers today make the model work too hard. The usual loop is *screenshot → think → click one thing → screenshot again*, and every step is a round trip. Clickless is designed around the opposite idea: **each call should do a lot and tell you everything that changed.**
@@ -49,7 +51,20 @@ Now: “(untitled)” — https://httpbin.org/post (new page) · tab t2 · 3049m
 - Split view, find in page, downloads, per-site permissions, Arc-style keyboard shortcuts (`⌘S` sidebar, `⌘D` pin, `Ctrl+1…9` spaces, `⌘1…9` tabs).
 - **Move in from Arc, Comet, Chrome, Brave or Edge** (Settings → Tabs, or `clickless import arc`): spaces, pinned tabs, folders, favourites and their icons from Arc; bookmarks and the tabs you had open from Chromium browsers. Run it again any time; nothing is duplicated. Passwords and logins are never read.
 
-## Quick start
+## Download and install
+
+1. Download `Clickless-…-mac-arm64.dmg` (Apple silicon) or `…-mac-x64.dmg` (Intel) from [Releases](https://github.com/antonarnaudov/clickless/releases/latest).
+2. Open it and drag **Clickless** into **Applications**.
+3. The first time, macOS says it can't verify the developer (the app isn't notarized yet). Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Clickless. You only do this once.
+4. After an update, macOS may ask whether Clickless may use “Clickless Safe Storage” in your keychain (where your API keys are encrypted). Click **Always Allow**. Until releases are signed with a developer certificate, each new version asks once.
+
+Releases are built by GitHub Actions from the public source; `SHA256SUMS.txt` next to the downloads lets you check them.
+
+**Your data stays on your Mac.** No account, no telemetry, no cloud. Tabs, history and settings live in `~/Library/Application Support/Clickless`; API keys in your keychain. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
+**Encrypted backups (optional).** Settings → **Backup**: pick a folder (iCloud Drive, Google Drive, Dropbox, OneDrive's Personal Vault, a Cryptomator vault, a USB drive) or a private GitHub repository and a passphrase. Clickless encrypts the backup on your Mac (scrypt + AES-256-GCM) before writing it anywhere, runs it daily or weekly, and restores it on a new Mac. Passwords, logins, cookies and API keys are never included.
+
+## Build from source
 
 Requirements: Node 20.19+ and macOS (Apple silicon or Intel).
 
@@ -61,7 +76,7 @@ npm run dev
 
 The first start opens a window and the control API on `http://127.0.0.1:7734`. The port and a random token are written to `~/.clickless/control.json` (only your user can read it).
 
-Install it as an app: `npm run dist`, then move `release/mac-arm64/Clickless.app` into Applications. The build signs it ad-hoc (no Apple developer certificate yet), so it opens on the Mac that built it; on another Mac, right-click → Open the first time.
+Your own app bundle: `npm run dist`, then move `release/mac-arm64/Clickless.app` into Applications. It's signed ad-hoc (no Apple developer certificate yet). Release DMGs: `npm run dist:release`, or push a `v*` tag and let GitHub Actions build a draft release.
 
 ## Connect an agent
 

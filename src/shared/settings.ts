@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS: Settings = {
   control: { enabled: true, port: DEFAULT_CONTROL_PORT, cdpPort: null },
   agent: { maxSteps: 40, showCursor: true, cursorMs: 220, dialogs: 'accept' },
   tabs: { archiveAfterHours: 12, sleepAfterMinutes: 30 },
+  searchSuggestions: true,
+  backup: { target: null, schedule: 'daily', keep: 10, lastAt: null, lastWhere: null, lastError: null },
   appearance: { theme: 'system', compactUrl: false },
 };
 

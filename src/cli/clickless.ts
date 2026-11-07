@@ -139,6 +139,7 @@ const HELP = `clickless — drive Clickless from the shell (any agent that can r
   clickless agent "<task>"         run the built-in agent
   clickless tools [--format openai|anthropic|mcp]
   clickless import [arc|comet|chrome|brave|edge]   bring in spaces, pinned tabs, folders, bookmarks and open tabs
+  clickless backup                 encrypted backup now (set it up in Settings → Backup); 'backup status' to check
   clickless mcp                    stdio MCP server bridged to the running browser
   clickless status
   clickless setup                  how to connect Claude Code and other agents
@@ -296,6 +297,15 @@ async function main() {
       if (j.favorites) lines.push(`  Favorites: ${j.favorites}`);
       if (j.skipped) lines.push(`  Skipped ${j.skipped} already there`);
       process.stdout.write(lines.join('\n') + '\n');
+      return;
+    }
+    case 'backup': {
+      const auth = { authorization: `Bearer ${d.token}`, 'content-type': 'application/json' };
+      const r = await fetch(`${d.url}/v1/backup`, { method: pos[0] === 'status' ? 'GET' : 'POST', headers: auth });
+      const j = (await r.json()) as any;
+      if (j.error) throw new Error(j.error);
+      if (json || pos[0] === 'status') return void process.stdout.write(JSON.stringify(j, null, 2) + '\n');
+      process.stdout.write(`Encrypted backup saved: ${j.where} (${Math.round(j.bytes / 1024)} KB)\n`);
       return;
     }
     case 'tools': {

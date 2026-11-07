@@ -54,6 +54,7 @@ function mergeSettings(saved: Partial<Settings> | undefined): Settings {
     control: { ...DEFAULT_SETTINGS.control, ...(s.control ?? {}) },
     agent: { ...DEFAULT_SETTINGS.agent, ...(s.agent ?? {}) },
     tabs: { ...DEFAULT_SETTINGS.tabs, ...(s.tabs ?? {}) },
+    backup: { ...DEFAULT_SETTINGS.backup, ...(s.backup ?? {}) },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...(s.appearance ?? {}) },
     providers: s.providers ?? [],
   };
@@ -155,6 +156,10 @@ export class History {
     this.saveSoon();
   }
 
+  all(): HistoryEntry[] {
+    return Array.from(this.map.values());
+  }
+
   search(query: string, limit = 20): HistoryEntry[] {
     const q = query.trim().toLowerCase();
     const all = Array.from(this.map.values());
@@ -194,6 +199,23 @@ export class History {
       console.error('[history] save failed', err);
     }
   }
+}
+
+/**
+ * Restores a backup: the current state and history are kept as `*.before-restore.json`, then the
+ * backup's are written. The caller relaunches the app right after (nothing else may save first).
+ */
+export function replaceData(state: PersistedState, history: HistoryEntry[]) {
+  const dir = dataDir();
+  for (const f of ['state.json', 'history.json']) {
+    const cur = path.join(dir, f);
+    if (fs.existsSync(cur)) fs.copyFileSync(cur, path.join(dir, f.replace('.json', '.before-restore.json')));
+  }
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+  pending = null;
+  writeAtomic(path.join(dir, 'state.json'), JSON.stringify(state, null, 1));
+  writeAtomic(path.join(dir, 'history.json'), JSON.stringify(history));
 }
 
 // ---------- secrets ----------

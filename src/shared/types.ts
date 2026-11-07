@@ -133,7 +133,7 @@ export interface FindState {
 
 export type OverlayState =
   | { kind: 'palette'; mode: 'new-tab' | 'navigate' | 'commands' | 'ask'; initial?: string; tabId?: TabId }
-  | { kind: 'settings'; section?: 'general' | 'ai' | 'agents' | 'search' | 'tabs' }
+  | { kind: 'settings'; section?: 'general' | 'ai' | 'agents' | 'search' | 'tabs' | 'backup' }
   | { kind: 'organize'; spaceId: string; loading: boolean; proposal: OrganizeProposal | null; error?: string }
   | { kind: 'space'; spaceId?: string };
 
@@ -170,6 +170,9 @@ export interface ProviderConfig {
   binary?: string;
 }
 
+/** Where encrypted backups go. */
+export type BackupTarget = { kind: 'folder'; folder: string } | { kind: 'github'; repo: string };
+
 export interface Settings {
   searchEngine: 'google' | 'duckduckgo' | 'bing' | 'brave' | 'kagi' | 'custom';
   /** Custom engine, `%s` is replaced by the query. */
@@ -205,6 +208,18 @@ export interface Settings {
     archiveAfterHours: number;
     /** Background tabs are put to sleep after this long (0 = never). */
     sleepAfterMinutes: number;
+  };
+  /** Address-bar suggestions from DuckDuckGo while typing (sends what you type to DuckDuckGo). */
+  searchSuggestions: boolean;
+  /** Optional encrypted backups. Off until a target and a passphrase are set. */
+  backup: {
+    target: BackupTarget | null;
+    schedule: 'daily' | 'weekly' | 'manual';
+    /** Folder targets keep this many backups (GitHub keeps every version in its history). */
+    keep: number;
+    lastAt: number | null;
+    lastWhere: string | null;
+    lastError: string | null;
   };
   appearance: {
     theme: 'system' | 'light' | 'dark';
@@ -249,6 +264,8 @@ export interface UIState {
   platform: 'darwin' | 'win32' | 'linux';
   /** True while the window is fullscreen (traffic lights hidden). */
   fullscreen: boolean;
+  /** Backup status (secrets are never sent to the UI, only whether they're set). */
+  backup: { hasPassphrase: boolean; hasGithubToken: boolean; running: boolean };
 }
 
 // ---------- Agent chat (the AI side panel) ----------

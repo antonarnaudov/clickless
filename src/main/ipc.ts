@@ -72,7 +72,7 @@ export function registerIpc(app: IpcApp) {
     for (const a of b.state.archived.filter((a) => a.title.toLowerCase().includes(lower) || a.url.toLowerCase().includes(lower)).slice(0, 2)) {
       out.push({ kind: 'archived', title: a.title, subtitle: 'Archived tab', url: a.url, archivedId: a.id, favicon: a.favicon });
     }
-    if (!urlLike && q.length >= 2) {
+    if (!urlLike && q.length >= 2 && b.state.settings.searchSuggestions) {
       for (const s of await remoteSuggestions(q)) out.push({ kind: 'search', title: s, subtitle: `Search ${engineLabel}`, url: b.searchUrl(s) });
     }
     return out.slice(0, limit);
@@ -293,6 +293,14 @@ export function registerIpc(app: IpcApp) {
         return app.regenerateToken();
       case 'import.run':
         return b.importFrom(String(c.source ?? '').toLowerCase());
+      case 'backup.configure':
+        return b.backups!.configure(c);
+      case 'backup.chooseFolder':
+        return b.backups!.chooseFolder();
+      case 'backup.run':
+        return b.backups!.run();
+      case 'backup.restore':
+        return b.backups!.restore(c);
     }
   }
 

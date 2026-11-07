@@ -12,6 +12,7 @@ import { ControlServer } from './server';
 import { discoveryFile, flushState, loadState, writeDiscovery } from './store';
 import { createTools } from './tools';
 import { listSources } from './importers';
+import { BackupService } from './backup-service';
 import { session } from 'electron';
 
 const VERSION = app.getVersion();
@@ -50,6 +51,11 @@ async function startControl() {
     debugCommand: (c) => (runCmd ? runCmd(c) : Promise.resolve(null)),
     importSources: () => listSources(),
     importFrom: (source) => browser.importFrom(source),
+    backupStatus: () => {
+      const c = browser.state.settings.backup;
+      return { ...browser.backups?.status(), target: c.target, schedule: c.schedule, lastAt: c.lastAt, lastWhere: c.lastWhere, lastError: c.lastError };
+    },
+    backupNow: () => browser.backups!.run(),
     trackAbort: () => browser.trackAbort(),
     untrackAbort: (ac) => browser.untrackAbort(ac),
   });
@@ -81,7 +87,11 @@ function controlSecrets() {
   const token = browser.secrets.controlToken();
   const url = browser.control.url ?? `http://127.0.0.1:${browser.state.settings.control.port}`;
   const mcpUrl = `${url}/mcp`;
-  const cli = path.join(app.getAppPath(), 'dist', 'cli', 'clickless.js');
+  // In the installed app the CLI sits outside the archive (asarUnpack) and runs on the app's own
+  // runtime, so nobody needs Node installed.
+  const cli = path.join(app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked'), 'dist', 'cli', 'clickless.js');
+  const run = app.isPackaged ? `ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${cli}"` : `node "${cli}"`;
+  const stdio = app.isPackaged ? { command: process.execPath, args: [cli, 'mcp'], env: { ELECTRON_RUN_AS_NODE: '1' } } : { command: 'node', args: [cli, 'mcp'] };
   return {
     token,
     mcpUrl,
@@ -91,20 +101,21 @@ function controlSecrets() {
       {
         mcpServers: {
           'clickless': { type: 'http', url: mcpUrl, headers: { Authorization: `Bearer ${token}` } },
-          'clickless-stdio': { command: 'node', args: [cli, 'mcp'] },
+          'clickless-stdio': stdio,
         },
       },
       null,
       2,
     ),
     curlExample: `curl -s ${url}/v1/act -H "Authorization: Bearer ${token}" -d '{"script":"goto news.ycombinator.com"}'`,
-    cliExample: `node "${cli}" act 'goto news.ycombinator.com; click "new"'`,
+    cliExample: `${run} act 'goto news.ycombinator.com; click "new"'`,
   };
 }
 
 app.whenReady().then(async () => {
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(path.join(app.getAppPath(), 'assets', 'icon.png'));
   browser = new Clickless(state, discoveryFile());
+  browser.backups = new BackupService(browser);
   const ses = session.fromPartition(PARTITION);
   handleScheme(ses, path.join(app.getAppPath(), 'dist', 'renderer'), process.env.CLICKLESS_DEV_URL);
 

@@ -4,6 +4,7 @@
 import type {
   ArchivedTab,
   AskState,
+  BackupTarget,
   ChatState,
   HistoryEntry,
   ImportSource,
@@ -101,7 +102,16 @@ export type Command =
   | { type: 'control.regenerateToken' }
   // ----- import -----
   /** Imports spaces, pinned tabs, folders, favourites and open tabs from another browser on this Mac. Returns an ImportReport. */
-  | { type: 'import.run'; source: string };
+  | { type: 'import.run'; source: string }
+  // ----- backup (optional, encrypted) -----
+  /** Sets where backups go, how often, and the passphrase / GitHub token (null removes, undefined keeps). */
+  | { type: 'backup.configure'; target?: BackupTarget | null; schedule?: Settings['backup']['schedule']; keep?: number; passphrase?: string | null; githubToken?: string | null }
+  /** Opens a folder picker; returns the chosen path or null. */
+  | { type: 'backup.chooseFolder' }
+  /** Backs up now. Returns { where, at, bytes }. */
+  | { type: 'backup.run' }
+  /** Replaces this profile with a backup (a file, or the latest at the configured target) and relaunches. */
+  | { type: 'backup.restore'; from: 'file' | 'target'; file?: string; passphrase?: string };
 
 export type CommandType = Command['type'];
 

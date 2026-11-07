@@ -38,6 +38,7 @@ import type {
 import type { ActOptions, Browser, HeadlessPage, ObserveOptions, ReadOptions, ScreenshotOptions, ToolResult, AI } from './contracts';
 import { runAct, type ActHost } from './act';
 import { PageController } from './page';
+import type { BackupService } from './backup-service';
 import { countPlan, readSource, type ImportNode, type ImportPlan, type ImportReport } from './importers';
 import { Headless } from './headless';
 import { History, Secrets, flushState, saveStateSoon, type PersistedState, type PersistedTab } from './store';
@@ -74,6 +75,8 @@ export class Clickless implements Browser {
   ai!: AI;
   headlessPages!: Headless;
   readonly history = new History();
+  /** Encrypted backups (set in index.ts). */
+  backups?: BackupService;
   readonly secrets = new Secrets();
 
   private tabs = new Map<TabId, Tab>();
@@ -569,10 +572,10 @@ export class Clickless implements Browser {
   }
 
   save() {
-    saveStateSoon(() => this.persisted());
+    saveStateSoon(() => this.persistedState());
   }
 
-  private persisted(): PersistedState {
+  persistedState(): PersistedState {
     const tabs: PersistedTab[] = Array.from(this.tabs.values())
       .filter((t) => !t.url.startsWith(`${APP_SCHEME}://error`))
       .map((t) => ({
@@ -617,6 +620,7 @@ export class Clickless implements Browser {
       control: this.control,
       platform: process.platform as UIState['platform'],
       fullscreen: this.fullscreen,
+      backup: this.backups?.status() ?? { hasPassphrase: false, hasGithubToken: false, running: false },
     };
   }
 
@@ -983,7 +987,7 @@ export class Clickless implements Browser {
     if (!t) return;
     const wasActive = this.activeTabId() === id;
     this.tabs.delete(id);
-    const rec = this.persisted().tabs.find((x) => x.id === id) ?? ({ ...t } as PersistedTab);
+    const rec = this.persistedState().tabs.find((x) => x.id === id) ?? ({ ...t } as PersistedTab);
     if (!t.internal) {
       this.closed.push({ ...rec, ...t });
       this.closed = this.closed.slice(-30);

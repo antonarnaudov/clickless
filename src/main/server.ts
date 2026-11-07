@@ -22,6 +22,9 @@ export interface ControlServerDeps {
   /** Import tabs from another browser on this Mac (GET lists sources, POST {source} imports). */
   importSources?(): unknown;
   importFrom?(source: string): unknown;
+  /** Encrypted backups: GET status, POST runs one now. */
+  backupStatus?(): unknown;
+  backupNow?(): Promise<unknown>;
   trackAbort(): AbortController;
   untrackAbort(ac: AbortController): void;
 }
@@ -181,6 +184,14 @@ export class ControlServer {
         return send(res, 422, { error: (err as Error).message });
       }
     }
+    if (url.pathname === '/v1/backup' && this.deps.backupNow) {
+      if (req.method === 'GET') return send(res, 200, this.deps.backupStatus?.() ?? {});
+      try {
+        return send(res, 200, await this.deps.backupNow());
+      } catch (err) {
+        return send(res, 422, { error: (err as Error).message });
+      }
+    }
     if (url.pathname === '/v1/tabs' && req.method === 'GET') return send(res, 200, this.deps.browser.listTabs({ all: url.searchParams.get('all') === '1' }));
 
     const toolMatch = /^\/v1\/(?:tools\/)?([a-z_]+)$/.exec(url.pathname);
@@ -225,6 +236,7 @@ export class ControlServer {
           '  POST /v1/<tool>                observe, act, read, search, tabs, screenshot, evaluate, handoff  (JSON args)',
           '  POST /v1/agent {"task": "…"}   run the built-in agent',
           '  POST /v1/import {"source": "arc"}  import tabs from Arc, Comet, Chrome, Brave or Edge (GET lists them)',
+          '  POST /v1/backup                 encrypted backup now, to the folder or private repo set in Settings (GET: status)',
           '  GET  /v1/tabs, /v1/instructions, /v1/health',
         ].join('\n'),
       );

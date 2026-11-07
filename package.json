@@ -20,7 +20,8 @@
     "test": "node scripts/build.mjs --only=node && node --test test/*.test.mjs",
     "test:e2e": "node scripts/build.mjs && node test/e2e/run.mjs",
     "dist": "node scripts/build.mjs && electron-builder --mac --dir",
-    "dist:dmg": "node scripts/build.mjs && electron-builder --mac"
+    "dist:dmg": "node scripts/build.mjs && electron-builder --mac",
+    "dist:release": "node scripts/build.mjs && electron-builder --mac dmg zip --arm64 --x64 --publish never"
   },
   "engines": {
     "node": ">=20.19"
@@ -84,7 +85,8 @@
       ],
       "identity": null,
       "darkModeSupport": true,
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "artifactName": "Clickless-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -98,6 +100,9 @@
       ]
     },
     "icon": "assets/icon.png",
-    "afterPack": "scripts/adhoc-sign.cjs"
+    "afterPack": "scripts/adhoc-sign.cjs",
+    "asarUnpack": [
+      "dist/cli/**"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, Eye, EyeOff, KeyRound, Laptop, LayoutGrid, Moon, Plug, RefreshCw, Search, Sparkles, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
-import type { DeepPartial, QueryMap } from '../../shared/ipc';
+import { Bot, Check, Copy, Eye, EyeOff, KeyRound, Laptop, LayoutGrid, Moon, Plug, RefreshCw, Search, ShieldCheck, Sparkles, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
+import type { Command, DeepPartial, QueryMap } from '../../shared/ipc';
 import { PROVIDER_PRESETS, SEARCH_ENGINES, type ProviderPreset } from '../../shared/settings';
 import type { ImportReport, ImportSource, OverlayState, ProviderConfig, Settings as SettingsT, UIState } from '../../shared/types';
 import { cmd, query } from '../common/api';
@@ -14,6 +14,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'agents', label: 'Agents & API', icon: Plug },
   { id: 'search', label: 'AI search', icon: Search },
   { id: 'tabs', label: 'Tabs', icon: Laptop },
+  { id: 'backup', label: 'Backup', icon: ShieldCheck },
 ];
 
 const update = (patch: DeepPartial<SettingsT>) => cmd({ type: 'settings.update', patch });
@@ -51,6 +52,7 @@ export function Settings({ overlay, state }: { overlay: Extract<OverlayState, { 
           {section === 'agents' && <Agents state={state} />}
           {section === 'search' && <SearchSection s={s} />}
           {section === 'tabs' && <Tabs s={s} />}
+          {section === 'backup' && <Backup s={s} status={state.backup} />}
         </div>
       </div>
     </div>
@@ -150,6 +152,9 @@ function General({ s }: { s: SettingsT }) {
             <LazyInput value={s.customSearchURL ?? ''} placeholder="https://example.com/search?q=%s" onSave={(customSearchURL) => update({ customSearchURL })} width={300} mono />
           </Row>
         )}
+        <Row title="Search suggestions" desc="Suggests searches while you type in the address bar. What you type is sent to DuckDuckGo; turn it off to keep it on this Mac.">
+          <Switch label="Search suggestions" on={s.searchSuggestions} onChange={(searchSuggestions) => update({ searchSuggestions })} />
+        </Row>
       </div>
     </>
   );
@@ -663,5 +668,220 @@ function ImportRow() {
         ))}
       </div>
     </Row>
+  );
+}
+
+// ---------- Backup ----------
+
+const errText = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+
+function Backup({ s, status }: { s: SettingsT; status: UIState['backup'] }) {
+  const b = s.backup;
+  const kind = b.target?.kind ?? 'off';
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pass, setPass] = useState('');
+  const [editPass, setEditPass] = useState(false);
+  const [repo, setRepo] = useState(b.target?.kind === 'github' ? b.target.repo : '');
+  const [token, setToken] = useState('');
+  const [githubOpen, setGithubOpen] = useState(false);
+  const [restore, setRestore] = useState<null | 'file' | 'target'>(null);
+  const [restorePass, setRestorePass] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setRepo(b.target?.kind === 'github' ? b.target.repo : ''), [b.target]);
+  const call = async (c: Command, ok?: (r: any) => string) => {
+    setMsg(null);
+    setBusy(true);
+    try {
+      const r = await window.clickless.cmd(c);
+      if (ok) setMsg({ ok: true, text: ok(r) });
+      return r;
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+      return undefined;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const chooseFolder = async () => {
+    const folder = (await call({ type: 'backup.chooseFolder' })) as string | null | undefined;
+    if (folder) await call({ type: 'backup.configure', target: { kind: 'folder', folder } }, () => 'Backups will go to that folder.');
+  };
+  const showGithub = kind === 'github' || githubOpen;
+  const where = b.target?.kind === 'folder' ? b.target.folder.split('/').pop() : b.target?.kind === 'github' ? b.target.repo : '';
+  return (
+    <>
+      <div className="s-group">
+        <div className="lbl">Encrypted backups</div>
+        <div className="desc">
+          Off unless you turn it on: your tabs and settings stay on this Mac. When it’s on, Clickless encrypts the backup here with your passphrase before it’s written anywhere, so the folder or repository only ever holds scrambled data.
+        </div>
+        <Row title="Passphrase" desc={`At least 10 characters. Keep it somewhere safe: without it nobody, you included, can open a backup.`}>
+          {status.hasPassphrase && !editPass ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="mono">
+                <Check size={13} /> Set
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditPass(true)}>
+                Change
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="field" type="password" style={{ width: 200 }} value={pass} placeholder="New passphrase" autoComplete="new-password" onChange={(e) => setPass(e.target.value)} />
+              <button
+                className="btn btn-soft btn-sm"
+                disabled={pass.length < 10 || busy}
+                onClick={async () => {
+                  const r = await call({ type: 'backup.configure', passphrase: pass }, () => 'Passphrase saved in your keychain.');
+                  if (r) {
+                    setPass('');
+                    setEditPass(false);
+                  }
+                }}
+              >
+                Save
+              </button>
+            </div>
+          )}
+        </Row>
+        <Row title="Back up to" desc="A folder (iCloud Drive, Google Drive, Dropbox, OneDrive’s Personal Vault, a Cryptomator vault, a USB drive) or a private GitHub repository.">
+          <Seg
+            value={showGithub ? 'github' : kind}
+            onChange={(v) => {
+              setMsg(null);
+              if (v === 'off') {
+                setGithubOpen(false);
+                call({ type: 'backup.configure', target: null }, () => 'Backups are off.');
+              } else if (v === 'folder') {
+                setGithubOpen(false);
+                chooseFolder();
+              } else setGithubOpen(true);
+            }}
+            options={[
+              { v: 'off', label: 'Off' },
+              { v: 'folder', label: 'Folder' },
+              { v: 'github', label: 'Private GitHub repo' },
+            ]}
+          />
+        </Row>
+        {kind === 'folder' && !githubOpen && b.target?.kind === 'folder' && (
+          <Row title="Folder" desc={`Keeps the newest ${b.keep} backups there.`}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span className="mono" title={b.target.folder} style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl' }}>
+                {b.target.folder}
+              </span>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={chooseFolder}>
+                Change…
+              </button>
+            </div>
+          </Row>
+        )}
+        {showGithub && (
+          <>
+            <Row title="Repository" desc="Create a private repository for it first. Public repositories are refused.">
+              <input className="field mono" style={{ width: 260 }} value={repo} placeholder="you/clickless-backup" onChange={(e) => setRepo(e.target.value)} />
+            </Row>
+            <Row
+              title="Access token"
+              desc={
+                <>
+                  A fine-grained token for that one repository with <b>Contents: read and write</b>, from GitHub → Settings → Developer settings → Fine-grained tokens. Kept in your keychain.
+                </>
+              }
+            >
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="field mono" type="password" style={{ width: 200 }} value={token} placeholder={status.hasGithubToken ? 'Saved' : 'github_pat_…'} autoComplete="off" onChange={(e) => setToken(e.target.value)} />
+                <button
+                  className="btn btn-soft btn-sm"
+                  disabled={!repo || (!token && !status.hasGithubToken) || busy}
+                  onClick={async () => {
+                    const r = await call({ type: 'backup.configure', target: { kind: 'github', repo }, githubToken: token || undefined }, () => `Connected: ${repo} is private and writable.`);
+                    if (r) {
+                      setToken('');
+                      setGithubOpen(false);
+                    }
+                  }}
+                >
+                  Save & check
+                </button>
+              </div>
+            </Row>
+          </>
+        )}
+        <Row title="Automatically" desc="Runs in the background while Clickless is open.">
+          <select className="field" style={{ width: 160 }} value={b.schedule} disabled={!b.target} onChange={(e) => call({ type: 'backup.configure', schedule: e.target.value as SettingsT['backup']['schedule'] })}>
+            <option value="daily">Every day</option>
+            <option value="weekly">Every week</option>
+            <option value="manual">Only when I ask</option>
+          </select>
+        </Row>
+        <Row
+          title="Last backup"
+          desc={
+            b.lastError ? (
+              <span style={{ color: 'var(--danger)' }}>{b.lastError}</span>
+            ) : b.lastAt ? (
+              `${timeAgo(b.lastAt)}${b.lastWhere ? ` · ${b.lastWhere.split('/').pop()}` : ''}`
+            ) : (
+              'None yet.'
+            )
+          }
+        >
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={!b.target || !status.hasPassphrase || status.running || busy}
+            onClick={() => call({ type: 'backup.run' }, (r) => `Encrypted backup saved (${Math.max(1, Math.round((r?.bytes ?? 0) / 1024))} KB).`)}
+          >
+            {status.running ? 'Backing up…' : 'Back up now'}
+          </button>
+        </Row>
+        <Row title="Restore" desc="Bring a backup onto this Mac, for example after setting up a new one.">
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRestore('file')}>
+              From a file…
+            </button>
+            {b.target && (
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRestore('target')}>
+                Latest from {where}
+              </button>
+            )}
+          </div>
+        </Row>
+        {restore && (
+          <div className="s-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+            <div className="k">
+              <b>Replace this Mac’s spaces, tabs and settings with the backup?</b>
+              <span>Your current ones are kept as a safety copy (state.before-restore.json in the app’s data folder). Clickless restarts when it’s done.</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <input
+                className="field"
+                type="password"
+                style={{ width: 220 }}
+                value={restorePass}
+                placeholder={status.hasPassphrase ? 'Passphrase (if different)' : 'Passphrase of the backup'}
+                onChange={(e) => setRestorePass(e.target.value)}
+              />
+              <button className="btn btn-ghost btn-sm" onClick={() => setRestore(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger btn-sm"
+                disabled={busy || (!status.hasPassphrase && restorePass.length < 10)}
+                onClick={() => call({ type: 'backup.restore', from: restore, passphrase: restorePass || undefined })}
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        )}
+        {msg && (
+          <div className="desc" style={{ color: msg.ok ? undefined : 'var(--danger)' }}>
+            {msg.text}
+          </div>
+        )}
+        <div className="desc">Included: spaces, tabs, folders, favourites, archive, history and settings. Never included: passwords, logins, cookies or API keys.</div>
+      </div>
+    </>
   );
 }
