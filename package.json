@@ -97,6 +97,7 @@
         "nsis"
       ]
     },
-    "icon": "assets/icon.png"
+    "icon": "assets/icon.png",
+    "afterPack": "scripts/adhoc-sign.cjs"
   }
 }

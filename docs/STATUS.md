@@ -10,6 +10,7 @@ _Updated 2026-11-07._
 - `read`: HN thread (authors/points kept), blog article (Readability), Wikipedia (infobox table).
 - `search`: Brave results + top pages read in ~3 s.
 - UI: shell, command bar, agent panel checked through `/v1/debug/ui`.
+- App bundle: `npm run dist` builds an ad-hoc-signed `Clickless.app` (the `afterPack` hook in `scripts/adhoc-sign.cjs`; without it Electron's broken linker signature fails `codesign --verify`). Installed in /Applications and run on a real profile: tabs, favourites, folders and pages load; Spotlight finds it.
 - Import (`clickless import arc|comet`, Settings → Tabs): a real Arc sidebar (2 spaces, folders, favourites, Today) and a real Comet profile (bookmarks + last session's open tabs) imported; most tabs get their icon from the source browser's Favicons DB; a second run adds nothing. Parsers covered by `test/importers.test.mjs` with synthetic fixtures.
 - Local model (qwen/qwen3.8-27b in LM Studio, 32k context, OpenAI-compatible provider): the Hacker News comments task succeeded with a correct summary — 5 steps / 218 s with thinking, **3 steps / 155 s** with `/no_think` (now automatic for Qwen 3). The pizza-form task did not finish: LM Studio dropped the model mid-run (memory pressure) and the HTTP call ended at 247 s.
 
@@ -23,7 +24,7 @@ _Updated 2026-11-07._
 - [ ] Settings flows end to end in the app (add provider, test, list models) — built against the mock, not yet clicked through in Electron
 - [ ] Ask page end to end with a configured model (pipeline tested with a mock server)
 - [ ] Organizer end to end with a model (heuristic path tested)
-- [ ] `npm run dist` app bundle smoke test; DMG; app icon
+- [ ] DMG and a signed, notarized build (needs an Apple developer account)
 - [ ] Chrome extensions (`session.extensions`), ad blocking, a password manager (Bitwarden / 1Password extension)
 - [ ] Import: Chromium profiles other than `Default`; history; Arc split views as Clickless split view (they come in as plain tabs now)
 - [ ] Windows/Linux window controls in the shell (only macOS traffic lights are handled)

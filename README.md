@@ -61,7 +61,7 @@ npm run dev
 
 The first start opens a window and the control API on `http://127.0.0.1:7734`. The port and a random token are written to `~/.clickless/control.json` (only your user can read it).
 
-Package an app bundle (unsigned): `npm run dist` → `release/mac-arm64/Clickless.app`.
+Install it as an app: `npm run dist`, then move `release/mac-arm64/Clickless.app` into Applications. The build signs it ad-hoc (no Apple developer certificate yet), so it opens on the Mac that built it; on another Mac, right-click → Open the first time.
 
 ## Connect an agent
 
