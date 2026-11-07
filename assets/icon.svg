@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+<defs>
+  <linearGradient id="tile" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#0E352E"/><stop offset="1" stop-color="#041411"/></linearGradient>
+  <radialGradient id="aura" cx="0.46" cy="0.5" r="0.5"><stop offset="0" stop-color="#3CF0B4" stop-opacity="0.16"/><stop offset="1" stop-color="#3CF0B4" stop-opacity="0"/></radialGradient>
+  <radialGradient id="sheen" cx="0.28" cy="0.08" r="0.7"><stop offset="0" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+</defs>
+<rect x="4" y="4" width="112" height="112" rx="27" fill="url(#tile)"/>
+<rect x="4" y="4" width="112" height="112" rx="27" fill="url(#aura)"/>
+<rect x="4" y="4" width="112" height="112" rx="27" fill="url(#sheen)"/>
+<rect x="4.75" y="4.75" width="110.5" height="110.5" rx="26.3" fill="none" stroke="#3CF0B4" stroke-opacity="0.16" stroke-width="1.5"/>
+<defs>
+  <linearGradient id="minti" gradientUnits="userSpaceOnUse" x1="16" y1="10" x2="96" y2="90"><stop offset="0" stop-color="#7DFBD5"/><stop offset="0.5" stop-color="#3CF0B4"/><stop offset="1" stop-color="#10A592"/></linearGradient>
+  <mask id="gapi" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120"><rect width="120" height="120" fill="#fff"/><path d="M56 50 L56 92 L66.5 82.5 L74 98 L82 94.5 L74.5 79 L89 79 Z" fill="#000" stroke="#000" stroke-width="13" stroke-linejoin="round"/></mask>
+</defs>
+<g mask="url(#gapi)"><circle cx="56" cy="50" r="13" fill="none" stroke="url(#minti)" stroke-width="5.5" stroke-opacity="1.0"/><circle cx="56" cy="50" r="25" fill="none" stroke="url(#minti)" stroke-width="4.5" stroke-opacity="0.62"/><circle cx="56" cy="50" r="37" fill="none" stroke="url(#minti)" stroke-width="3.5" stroke-opacity="0.3"/></g>
+<path d="M56 50 L56 92 L66.5 82.5 L74 98 L82 94.5 L74.5 79 L89 79 Z" fill="#F4F7F2" stroke="#F4F7F2" stroke-width="4.5" stroke-linejoin="round"/>
+</svg>

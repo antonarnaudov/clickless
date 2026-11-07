@@ -1,0 +1,29 @@
+node_modules/
+dist/
+release/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# Never commit browsing data or a browser profile (yours or anyone's). Tests use synthetic
+# fixtures on example.* domains; demo content lives in a local profile, not in the repo.
+state.json
+*.state.json
+StorableSidebar.json
+Bookmarks
+Favicons
+Favicons-journal
+Session_*
+Tabs_*
+History
+Cookies
+Login Data*
+*.db
+*.sqlite
+*.sqlite3
+profile/
+profiles/
+user-data/
+screenshots/
