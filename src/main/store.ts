@@ -64,6 +64,7 @@ function mergeSettings(saved: Partial<Settings> | undefined): Settings {
     agent: { ...DEFAULT_SETTINGS.agent, ...(s.agent ?? {}) },
     tabs: { ...DEFAULT_SETTINGS.tabs, ...(s.tabs ?? {}) },
     backup: { ...DEFAULT_SETTINGS.backup, ...(s.backup ?? {}) },
+    agents: { ...DEFAULT_SETTINGS.agents, ...(s.agents ?? {}), access: { ...(s.agents?.access ?? {}) } },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...(s.appearance ?? {}) },
     providers: s.providers ?? [],
   };

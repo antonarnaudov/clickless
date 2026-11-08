@@ -4,6 +4,7 @@ import { useTheme } from '../common/theme';
 import { Organizer } from './Organizer';
 import { Palette } from './Palette';
 import { Settings } from './Settings';
+import { ShareTabs } from './ShareTabs';
 import { SpaceEditor } from './SpaceEditor';
 
 export function App() {
@@ -23,7 +24,7 @@ export function App() {
   }, [overlay]);
 
   if (!state || !overlay) return null;
-  const close = () => cmd({ type: 'ui.overlay', overlay: null });
+  const close = () => (overlay.kind === 'share-tabs' ? cmd({ type: 'agents.share', requestId: overlay.requestId, tabIds: null }) : cmd({ type: 'ui.overlay', overlay: null }));
 
   return (
     <>
@@ -31,6 +32,7 @@ export function App() {
       {overlay.kind === 'palette' && <Palette key="palette" overlay={overlay} state={state} />}
       {overlay.kind === 'settings' && <Settings key="settings" overlay={overlay} state={state} />}
       {overlay.kind === 'organize' && <Organizer key="organize" overlay={overlay} state={state} />}
+      {overlay.kind === 'share-tabs' && <ShareTabs key={overlay.requestId} overlay={overlay} state={state} />}
       {overlay.kind === 'space' && <SpaceEditor key={`space-${overlay.spaceId ?? 'new'}`} overlay={overlay} state={state} />}
     </>
   );

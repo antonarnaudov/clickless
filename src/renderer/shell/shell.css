@@ -1551,3 +1551,48 @@ button.chip:hover {
 .row:hover .split-mark {
   display: none;
 }
+
+.agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 2px 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--magic) 14%, var(--glaze));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--magic) 35%, transparent);
+}
+.agent-badge > span:last-child {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  font-size: 12.5px;
+}
+.agent-badge > span:last-child span {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+.agent-windows {
+  padding: 4px 2px 6px;
+  border-top: 1px solid var(--line);
+}
+.row.agent-window .title {
+  font-size: 12.5px;
+}
+.brand-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 8px;
+  background: var(--glaze);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+}
+.brand-svg {
+  display: block;
+  line-height: 0;
+}
+.brand-svg svg {
+  width: 100%;
+  height: 100%;
+}

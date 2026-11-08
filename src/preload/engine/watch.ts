@@ -34,10 +34,34 @@ export function quietMs(): number {
   return Math.round(performance.now() - lastMutationAt);
 }
 
+/** Visible text lines inside open shadow roots (MutationObserver doesn't see into them). */
+function shadowLines(): Set<string> {
+  const out = new Set<string>();
+  const walk = (root: Document | ShadowRoot, depth: number) => {
+    const all = root.querySelectorAll('*');
+    for (let i = 0; i < all.length && i < 6000; i++) {
+      const sr = (all[i] as HTMLElement).shadowRoot;
+      if (!sr) continue;
+      for (const c of Array.from(sr.children)) {
+        if (c.tagName === 'STYLE' || c.tagName === 'SCRIPT' || !visible(c)) continue;
+        for (const line of ((c as HTMLElement).innerText || '').split('\n')) {
+          const t = clean(line, 300);
+          if (t.length >= 2) out.add(t);
+        }
+      }
+      if (depth < 4) walk(sr, depth + 1);
+    }
+  };
+  walk(document, 0);
+  return out;
+}
+let shadowBefore = new Set<string>();
+
 export function watchStart(): boolean {
   watching = true;
   added = [];
   mutationsSinceStart = 0;
+  shadowBefore = shadowLines();
   return true;
 }
 
@@ -76,6 +100,12 @@ export function watchCollect(): WatchResult {
     out.push(t);
     budget -= t.length;
     if (budget <= 0) break;
+  }
+  for (const t of shadowLines()) {
+    if (shadowBefore.has(t) || seen.has(t) || budget <= 0) continue;
+    seen.add(t);
+    out.push(t);
+    budget -= t.length;
   }
   const alerts: string[] = [];
   for (const el of Array.from(document.querySelectorAll('[role=alert], [role=status], [aria-live=assertive], [aria-live=polite], .toast, .Toastify__toast, [data-sonner-toast]'))) {

@@ -13,6 +13,7 @@ import { discoveryFile, flushState, loadState, writeDiscovery } from './store';
 import { createTools } from './tools';
 import { listSources } from './importers';
 import { BackupService } from './backup-service';
+import { AgentProfiles } from './agent-profiles';
 import { session } from 'electron';
 
 const VERSION = app.getVersion();
@@ -25,7 +26,14 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 registerSchemes();
+/** Set when this process is an agent's own browser (started by the main Clickless). */
+const AGENT = process.env.CLICKLESS_AGENT_PROFILE ? { id: process.env.CLICKLESS_AGENT_PROFILE, name: process.env.CLICKLESS_AGENT_NAME || process.env.CLICKLESS_AGENT_PROFILE } : null;
 const state = loadState();
+if (AGENT && !state.tabs.length && state.spaces.length === 2 && state.spaces[0].id === 's1' && state.spaces[1].id === 's2') {
+  // an agent's first start: one space named after it, no Personal/Work
+  state.spaces = [{ id: 's1', name: AGENT.name, icon: '🤖', color: '#10a592' }];
+  state.activeSpaceId = 's1';
+}
 if (state.settings.control.cdpPort) app.commandLine.appendSwitch('remote-debugging-port', String(state.settings.control.cdpPort));
 nativeTheme.themeSource = state.settings.appearance.theme;
 // Dev/test copies keep drawing while hidden behind other windows, so captures and replayed input work.
@@ -57,6 +65,23 @@ async function startControl() {
     debugShellMouse: (steps) => browser.debugShellMouse(steps as any),
     debugShellEval: (code) => browser.debugShellEval(code),
     debugMenu: (acc) => browser.debugMenu(acc),
+    agentRoute: browser.agentProfiles
+      ? {
+          access: (client) => browser.agentProfiles!.access(client),
+          forward: (client, name, args, signal) => browser.agentProfiles!.forward(client, name, args, signal),
+          requestTabs: (client, args, signal) => browser.agentProfiles!.requestTabs(client, args, signal),
+        }
+      : undefined,
+    appAction: async (body) => {
+      if (body.action === 'focus') return browser.bringToFront();
+      if (body.action === 'quit') return void setTimeout(() => app.quit(), 50);
+      if (body.action === 'open') {
+        const ids: string[] = [];
+        for (const [i, u] of (body.urls ?? []).entries()) ids.push((await browser.openTab(u, { background: i > 0 })).id);
+        return { ids };
+      }
+      return { ok: false };
+    },
     importSources: () => listSources(),
     importFrom: (source) => browser.importFrom(source),
     backupStatus: () => {
@@ -68,7 +93,7 @@ async function startControl() {
     untrackAbort: (ac) => browser.untrackAbort(ac),
   });
   try {
-    const port = await srv.start(s.port);
+    const port = await srv.start(process.env.CLICKLESS_PORT !== undefined ? Number(process.env.CLICKLESS_PORT) || 0 : s.port);
     server = srv;
     const url = `http://127.0.0.1:${port}`;
     browser.control = { ...browser.control, running: true, port, url, mcpUrl: `${url}/mcp`, error: undefined };
@@ -124,7 +149,13 @@ function controlSecrets() {
 app.whenReady().then(async () => {
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(path.join(app.getAppPath(), 'assets', 'icon.png'));
   browser = new Clickless(state, discoveryFile());
-  browser.backups = new BackupService(browser);
+  if (AGENT) {
+    browser.profile = { kind: 'agent', id: AGENT.id, name: AGENT.name };
+    if (process.platform === 'darwin') app.dock?.setBadge('Agent');
+  } else {
+    browser.backups = new BackupService(browser);
+    browser.agentProfiles = new AgentProfiles(browser);
+  }
   const ses = session.fromPartition(PARTITION);
   handleScheme(ses, path.join(app.getAppPath(), 'dist', 'renderer'), process.env.CLICKLESS_DEV_URL);
 
@@ -157,6 +188,7 @@ app.whenReady().then(async () => {
     menuTimer = setTimeout(() => buildMenu(browser, runCommand), 300);
   };
   browser.createWindow();
+  if (AGENT) browser.win.setTitle(`${AGENT.name} — its own Clickless profile`);
   await startControl();
 });
 

@@ -10,6 +10,15 @@ For agents (and the people writing them). Clickless is a real browser with the u
 4. **Use `read` for content** (articles, results, prices, tables) and `search` for research.
 5. **`handoff`** when the human must act: their password, 2FA, captchas, payment confirmation.
 
+## Your own browser profile
+
+If you connect over MCP (Claude Code, Codex, Gemini CLI, Cursor…), you usually get your **own** Clickless browser: a separate profile and window with your own cookies, logins, history and tabs. The user's tabs and accounts are private to them, and they can watch your window while you work.
+
+- Everything works as usual (`observe`, `act`, `read`, `tabs`, …), in your window.
+- You start signed out everywhere. If a task needs the user's account, hand off with `handoff` so they can sign in in your window, or ask them in your reply.
+- Need a page the user has open? Call `request_tabs` with a one-line `reason` (and `match`, e.g. `"github.com"`, to pre-select). The user picks which tabs to share; copies open in your window and the result lists their tab ids. They may decline.
+- The user can switch you to their own profile in Settings → Agents & API → Agent profiles; then `request_tabs` isn't offered and you act in their browser.
+
 ## Targets
 
 | Form | Example | Notes |

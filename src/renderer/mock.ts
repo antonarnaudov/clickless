@@ -183,6 +183,8 @@ function installMock() {
     platform: 'darwin',
     fullscreen: false,
     backup: { hasPassphrase: false, hasGithubToken: false, running: false },
+    profile: params.get('agent') ? { kind: 'agent', id: 'claude-code', name: 'Claude Code' } : { kind: 'user' },
+    agentProfiles: [{ id: 'claude-code', name: 'Claude Code', running: true, lastUsedAt: now - 60_000, calls: 14, tabs: 3, access: 'own' }],
   };
 
   // ---------- chat ----------

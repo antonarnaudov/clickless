@@ -187,7 +187,13 @@ export function normalizeStep(raw: unknown): Step {
   }
   if (action === 'press' && !step.key) throw new Error('"press" needs a key, e.g. "Enter"');
   if (action === 'goto' && !step.url) throw new Error('"goto" needs a url');
-  if (action === 'fill' && (!step.fields || typeof step.fields !== 'object')) throw new Error('"fill" needs fields: {"Label": "value"}');
+  if (action === 'fill' && (!step.fields || typeof step.fields !== 'object') && step.target !== undefined && (step.text !== undefined || step.value !== undefined)) {
+    // {"action":"fill","target":"Subject","text":"…"} — one field: same as type
+    step.action = 'type';
+    step.text = String(step.text ?? step.value);
+    delete step.value;
+  }
+  if (step.action === 'fill' && (!step.fields || typeof step.fields !== 'object')) throw new Error('"fill" needs fields: {"Label": "value"} (or a target and text for one field)');
   return step;
 }
 

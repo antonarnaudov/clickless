@@ -53,6 +53,12 @@ None in the repo or env. Provider API keys are entered in Settings → AI and st
 ## Personal data stays local
 This repo is public. Nobody's browsing data, profile files, screenshots of a real profile, names, places or personal projects go in it — not the maintainer's, not a tester's. Real profiles live in `<userData>` (`~/Library/Application Support/Clickless`) and are never copied into the repo. Tests use synthetic fixtures on `example.*` domains; mock and demo content in `src/renderer/mock.ts` and the docs use generic sites and names. Screenshots for the README come from a throwaway demo profile filled with generic content.
 
+## Agent profiles
+An agent that connects over MCP works in its own browser by default: `src/main/agent-profiles.ts` starts a separate Clickless process (`CLICKLESS_AGENT_PROFILE`, its own `CLICKLESS_USER_DATA` under `<userData>/agent-profiles/<id>` and `CLICKLESS_HOME`, port 0) and the control server forwards that client's tool calls to it (`ControlServer.runTool`). `request_tabs` asks the user in the main window and opens copies in the agent's. Your own scripts (HTTP, the CLI) stay in the main profile. Client names are matched in `src/shared/agents.ts`.
+
+## Agent benchmark
+`npm run bench:agent` (needs a running Clickless and the `claude` CLI; `--model`, `--only`, `--log <dir>`): Claude Code runs six tasks on a local test site (`test/agent-bench/site.mjs`) and each is scored by what the site recorded. Run it after changing `act`, `observe`, `read` or the engine.
+
 ## Releases
 Push a `v*` tag (with the maintainer's yes): `.github/workflows/release.yml` builds the DMGs/ZIPs on GitHub's macOS runner and attaches them to a **draft** release; the maintainer publishes it. Never upload builds made on a personal machine.
 

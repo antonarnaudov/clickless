@@ -134,6 +134,8 @@ export interface FindState {
 export type OverlayState =
   | { kind: 'palette'; mode: 'new-tab' | 'navigate' | 'commands' | 'ask'; initial?: string; tabId?: TabId }
   | { kind: 'settings'; section?: 'general' | 'ai' | 'agents' | 'search' | 'tabs' | 'backup' }
+  /** An agent working in its own profile asks for some of the user's tabs. */
+  | { kind: 'share-tabs'; requestId: string; clientId: string; clientName: string; reason: string; preselect: string[] }
   | { kind: 'organize'; spaceId: string; loading: boolean; proposal: OrganizeProposal | null; error?: string }
   | { kind: 'space'; spaceId?: string };
 
@@ -209,6 +211,12 @@ export interface Settings {
     /** Background tabs are put to sleep after this long (0 = never). */
     sleepAfterMinutes: number;
   };
+  /** Agents that connect over MCP work in their own browser profile and window ('own'), or in yours ('shared'). */
+  agents: {
+    defaultAccess: 'own' | 'shared';
+    /** Per agent client id (claude-code, codex, gemini-cli, …). */
+    access: Record<string, 'own' | 'shared'>;
+  };
   /** Address-bar suggestions from DuckDuckGo while typing (sends what you type to DuckDuckGo). */
   searchSuggestions: boolean;
   /** Optional encrypted backups. Off until a target and a passphrase are set. */
@@ -266,6 +274,22 @@ export interface UIState {
   fullscreen: boolean;
   /** Backup status (secrets are never sent to the UI, only whether they're set). */
   backup: { hasPassphrase: boolean; hasGithubToken: boolean; running: boolean };
+  /** This window is the user's browser, or an agent's own browser profile. */
+  profile: { kind: 'user' } | { kind: 'agent'; id: string; name: string };
+  /** Agents with their own browser profile (main window only). */
+  agentProfiles: AgentProfileStatus[];
+}
+
+export interface AgentProfileStatus {
+  /** Agent client id: claude-code, codex, gemini-cli, … */
+  id: string;
+  name: string;
+  /** Its browser process is running. */
+  running: boolean;
+  lastUsedAt: number;
+  calls: number;
+  tabs?: number;
+  access: 'own' | 'shared';
 }
 
 // ---------- Agent chat (the AI side panel) ----------

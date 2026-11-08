@@ -75,10 +75,13 @@ interface ToolResult {
   data?: unknown;
 }
 
+/** Who is calling: the CLI itself, or the agent on the other side of `clickless mcp` (its MCP client name). */
+let clientName = process.env.CLICKLESS_CLIENT || 'clickless-cli';
+
 async function call(d: Discovery, tool: string, args: Record<string, unknown>): Promise<ToolResult> {
   const r = await fetch(`${d.url}/v1/${tool}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${d.token}`, 'content-type': 'application/json', 'x-clickless-client': process.env.CLICKLESS_CLIENT || 'cli' },
+    headers: { authorization: `Bearer ${d.token}`, 'content-type': 'application/json', 'x-clickless-client': clientName },
     body: JSON.stringify(args),
   });
   if (!r.ok && r.status !== 422) {
@@ -150,10 +153,14 @@ Options: --tab <id> to act on a specific tab, --json for raw JSON.`;
 async function mcpBridge() {
   const server = new Server({ name: 'clickless', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: await fetchInstructions() });
   let tools: unknown[] | null = null;
+  server.oninitialized = () => {
+    const n = server.getClientVersion()?.name;
+    if (n) clientName = n.slice(0, 40);
+  };
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const d = await connect(true);
     if (!tools) {
-      const r = await fetch(`${d.url}/v1/tools?format=mcp`, { headers: { authorization: `Bearer ${d.token}` } });
+      const r = await fetch(`${d.url}/v1/tools?format=mcp`, { headers: { authorization: `Bearer ${d.token}`, 'x-clickless-client': clientName } });
       tools = (await r.json()) as unknown[];
     }
     return { tools: tools as any };

@@ -21,7 +21,8 @@
     "test:e2e": "node scripts/build.mjs && node test/e2e/run.mjs",
     "dist": "node scripts/build.mjs && electron-builder --mac --dir",
     "dist:dmg": "node scripts/build.mjs && electron-builder --mac",
-    "dist:release": "node scripts/build.mjs && electron-builder --mac dmg zip --arm64 --x64 --publish never"
+    "dist:release": "node scripts/build.mjs && electron-builder --mac dmg zip --arm64 --x64 --publish never",
+    "bench:agent": "node test/agent-bench/run.mjs"
   },
   "engines": {
     "node": ">=20.19"

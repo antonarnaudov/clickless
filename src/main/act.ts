@@ -315,10 +315,11 @@ export async function runAct(host: ActHost, tabId: string, steps: Step[], opts: 
         const opened = host.openedBy(c.tabId, stepStart);
         if (opened.length) {
           const id = opened[opened.length - 1];
+          const from = c.tabId;
           c.tabId = id;
           c.ctl = await host.controller(id);
           await c.ctl.waitReady(10000).catch(() => {});
-          lines.push(`  → the page opened a new tab ${id} ${host.tabLabel(id)}; continuing there`);
+          lines.push(`  → the page opened a new tab ${id} ${host.tabLabel(id)}; continuing there. To go back to the page you came from: switchtab ${from}`);
         }
       } catch (err) {
         failed = true;

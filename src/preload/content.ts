@@ -155,6 +155,12 @@ const methods: { [K in keyof EngineMethods]: (p: any) => ReturnType<EngineMethod
         rect: [Math.round(r.x + bl), Math.round(r.y + bt), Math.round(r.width), Math.round(r.height)] as [number, number, number, number],
       };
     }),
+  scrollChildFrame: ({ index }) => {
+    const f = document.querySelectorAll('iframe, frame')[index] as HTMLElement | undefined;
+    f?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' as ScrollBehavior });
+    return !!f;
+  },
+  viewport: () => ({ w: innerWidth, h: innerHeight }),
   pointer: (p) => pointer(p),
   pointerHide: () => pointerHide(),
   marks: (p) => marks(p.boxes),

@@ -309,6 +309,18 @@ export function registerIpc(app: IpcApp) {
         return app.regenerateToken();
       case 'import.run':
         return b.importFrom(String(c.source ?? '').toLowerCase());
+      case 'agents.share':
+        return b.agentProfiles?.resolveShare(c.requestId, c.tabIds);
+      case 'agents.access':
+        return b.agentProfiles?.setAccess(c.clientId, c.access);
+      case 'agents.defaultAccess':
+        b.state.settings = { ...b.state.settings, agents: { ...b.state.settings.agents, defaultAccess: c.access } };
+        b.save();
+        return b.pushState();
+      case 'agents.show':
+        return b.agentProfiles?.show(c.clientId);
+      case 'agents.reset':
+        return b.agentProfiles?.reset(c.clientId);
       case 'backup.configure':
         return b.backups!.configure(c);
       case 'backup.chooseFolder':

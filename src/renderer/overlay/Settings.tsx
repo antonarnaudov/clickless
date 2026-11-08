@@ -463,7 +463,7 @@ function Agents({ state }: { state: UIState }) {
     <>
       <div className="s-group">
         <div className="desc" style={{ fontSize: 13 }}>
-          Any agent can drive Clickless — Claude Code, Cursor, Codex, a Python script with a local model. They connect to a local API on this Mac and act in your real, signed-in browser while you watch. Only programs holding the token below can connect.
+          Any agent can drive Clickless — Claude Code, Codex, Gemini CLI, Cursor, a Python script with a local model. Agents that connect over MCP get their own browser profile and window, so your tabs and logins stay yours; your own scripts use your browser. Everything stays on this Mac, and only programs holding the token below can connect.
         </div>
         <div className={cx('status-line', !c.running && 'bad')}>
           <span className="live" />
@@ -539,6 +539,8 @@ function Agents({ state }: { state: UIState }) {
           </div>
         </div>
       )}
+
+      <AgentProfilesGroup state={state} />
 
       <div className="s-group">
         <div className="lbl">Access</div>
@@ -965,4 +967,71 @@ function agentSnippets(sec: QueryMap['controlSecrets']['result']) {
     { id: 'http', name: 'HTTP API', where: 'local models, Python, n8n — anything that speaks HTTP', text: sec.curlExample },
     { id: 'cli', name: 'Shell & scripts', where: 'the clickless CLI', text: sec.cliExample },
   ] as { id: string; name: string; where: string; text: string; note?: string }[];
+}
+
+// ---------- agent profiles ----------
+
+function AgentProfilesGroup({ state }: { state: UIState }) {
+  const a = state.settings.agents;
+  const [resetting, setResetting] = useState<string | null>(null);
+  if (state.profile.kind === 'agent') return null;
+  return (
+    <div className="s-group">
+      <div className="lbl">Agent profiles</div>
+      <div className="desc">
+        Agents that connect over MCP get their own browser: a separate profile and window with their own cookies, logins and tabs. Your tabs, accounts and history stay private; an agent can ask for specific tabs and you choose what to share.
+      </div>
+      <Row title="When an agent connects" desc="Your own scripts (HTTP, the clickless CLI) always use your browser.">
+        <Seg
+          value={a.defaultAccess}
+          onChange={(access) => cmd({ type: 'agents.defaultAccess', access })}
+          options={[
+            { v: 'own', label: 'Its own profile' },
+            { v: 'shared', label: 'My profile' },
+          ]}
+        />
+      </Row>
+      {state.agentProfiles.map((p) => {
+        const info = agentClient(p.id);
+        return (
+          <div key={p.id} className="s-row agent-prof">
+            <div className="k" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <BrandIcon name={info.brand ?? info.id} size={16} tile={30} />
+              <span style={{ display: 'flex', flexDirection: 'column' }}>
+                <b>{p.name}</b>
+                <span>
+                  {p.access === 'shared' ? 'Uses your browser' : p.running ? `Own window open · ${p.tabs ?? 0} tab${p.tabs === 1 ? '' : 's'}` : 'Own profile · not running'}
+                  {p.lastUsedAt ? ` · ${timeAgo(p.lastUsedAt)}` : ''}
+                </span>
+              </span>
+            </div>
+            <div className="v" style={{ gap: 6 }}>
+              <Seg
+                value={p.access}
+                onChange={(access) => cmd({ type: 'agents.access', clientId: p.id, access })}
+                options={[
+                  { v: 'own', label: 'Own' },
+                  { v: 'shared', label: 'Mine' },
+                ]}
+              />
+              {p.access === 'own' && (
+                <button className="btn btn-ghost btn-sm" onClick={() => cmd({ type: 'agents.show', clientId: p.id })}>
+                  Show window
+                </button>
+              )}
+              {resetting === p.id ? (
+                <button className="btn btn-danger btn-sm" onClick={() => (setResetting(null), cmd({ type: 'agents.reset', clientId: p.id }))}>
+                  Delete its profile?
+                </button>
+              ) : (
+                <button className="btn btn-ghost btn-sm" title="Close its window and delete its cookies, logins and tabs" onClick={() => setResetting(p.id)}>
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

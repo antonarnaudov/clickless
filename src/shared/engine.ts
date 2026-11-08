@@ -167,6 +167,9 @@ export interface EngineMethods {
   hasText(p: { text: string }): boolean;
   read(p: ReadParams): ReadResult;
   childFrames(): FrameChildRect[];
+  /** Scrolls the index-th iframe/frame of this document to the middle of the view. */
+  scrollChildFrame(p: { index: number }): boolean;
+  viewport(): { w: number; h: number };
   /** Top frame only: agent cursor and highlights. */
   pointer(p: { x: number; y: number; label?: string; rect?: [number, number, number, number]; ms: number; click?: boolean }): boolean;
   pointerHide(): boolean;

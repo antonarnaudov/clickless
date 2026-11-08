@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { AI, Browser, ToolRegistry, ToolResult } from './contracts';
 import { exportTools } from './tools';
+import { REQUEST_TABS_TOOL } from './agent-profiles';
 
 export interface ControlServerDeps {
   browser: Browser;
@@ -28,6 +29,14 @@ export interface ControlServerDeps {
   /** Encrypted backups: GET status, POST runs one now. */
   backupStatus?(): unknown;
   backupNow?(): Promise<unknown>;
+  /** Agents' own profiles: where a client's calls go (main browser only). */
+  agentRoute?: {
+    access(client: string): 'own' | 'shared';
+    forward(client: string, name: string, args: Record<string, any>, signal?: AbortSignal): Promise<ToolResult>;
+    requestTabs(client: string, args: Record<string, any>, signal?: AbortSignal): Promise<ToolResult>;
+  };
+  /** Internal: focus / open URLs / quit — used by the main browser to drive an agent's own browser. */
+  appAction?(body: { action?: string; urls?: string[] }): Promise<unknown>;
   trackAbort(): AbortController;
   untrackAbort(ac: AbortController): void;
 }
@@ -95,12 +104,46 @@ export class ControlServer {
     return true;
   }
 
+  private own(client: string) {
+    return this.deps.agentRoute?.access(client) === 'own';
+  }
+
+  private toolList(client: string, format: 'openai' | 'anthropic' | 'mcp' | 'json') {
+    const list = exportTools(this.deps.tools, format) as any[];
+    if (!this.own(client)) return list;
+    const t = REQUEST_TABS_TOOL;
+    const extra =
+      format === 'openai'
+        ? { type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } }
+        : format === 'anthropic'
+          ? { name: t.name, description: t.description, input_schema: t.inputSchema }
+          : format === 'mcp'
+            ? { name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: true } }
+            : { name: t.name, description: t.description, inputSchema: t.inputSchema, readOnly: true };
+    return [...list, extra];
+  }
+
+  private instructions(client: string) {
+    const base = this.deps.tools.instructions;
+    if (!this.own(client)) return base;
+    return `${base}\n\nYou have your own browser: a separate Clickless profile and window, not the user's. Its cookies, logins and tabs are yours alone; the user's tabs and accounts are private to them. If you need a page the user has open, call request_tabs and say why; they choose what to share.`;
+  }
+
+  /** Runs a tool for a client: in its own browser profile, or in the user's. */
+  private async runTool(client: string, name: string, args: Record<string, any>, signal: AbortSignal): Promise<ToolResult> {
+    if (this.own(client) && this.deps.agentRoute) {
+      if (name === REQUEST_TABS_TOOL.name) return this.deps.agentRoute.requestTabs(client, args, signal);
+      return this.deps.agentRoute.forward(client, name, args, signal);
+    }
+    return this.deps.tools.call(name, args, { browser: this.deps.browser, source: client, signal });
+  }
+
   private makeMcpServer(getClient: () => string): Server {
     const server = new Server(
       { name: 'clickless', version: this.deps.version },
-      { capabilities: { tools: {} }, instructions: this.deps.tools.instructions },
+      { capabilities: { tools: {} }, instructions: this.instructions(getClient()) },
     );
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: exportTools(this.deps.tools, 'mcp') as any }));
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: this.toolList(getClient(), 'mcp') as any }));
     server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
       const client = getClient();
       this.deps.noteClient(client);
@@ -108,7 +151,7 @@ export class ControlServer {
       const onAbort = () => ac.abort();
       extra.signal?.addEventListener('abort', onAbort);
       try {
-        const r = await this.deps.tools.call(req.params.name, (req.params.arguments ?? {}) as Record<string, any>, { browser: this.deps.browser, source: client, signal: ac.signal });
+        const r = await this.runTool(client, req.params.name, (req.params.arguments ?? {}) as Record<string, any>, ac.signal);
         return toMcpContent(r) as any;
       } finally {
         extra.signal?.removeEventListener('abort', onAbort);
@@ -172,9 +215,10 @@ export class ControlServer {
 
     if (url.pathname === '/v1/tools' && req.method === 'GET') {
       const format = (url.searchParams.get('format') ?? 'json') as 'openai' | 'anthropic' | 'mcp' | 'json';
-      return send(res, 200, exportTools(this.deps.tools, format));
+      return send(res, 200, this.toolList(client, format));
     }
-    if (url.pathname === '/v1/instructions') return send(res, 200, this.deps.tools.instructions);
+    if (url.pathname === '/v1/instructions') return send(res, 200, this.instructions(client));
+    if (url.pathname === '/v1/app' && req.method === 'POST' && this.deps.appAction) return send(res, 200, (await this.deps.appAction(((await readBody(req)) ?? {}) as any)) ?? { ok: true });
     if (url.pathname === '/v1/debug/ui' && process.env.CLICKLESS_DEBUG && this.deps.debugCapture) return send(res, 200, await this.deps.debugCapture());
     if (url.pathname === '/v1/debug/cmd' && process.env.CLICKLESS_DEBUG && this.deps.debugCommand) return send(res, 200, { result: (await this.deps.debugCommand(await readBody(req))) ?? null });
     if (url.pathname === '/v1/import' && this.deps.importFrom) {
@@ -218,13 +262,13 @@ export class ControlServer {
         this.deps.untrackAbort(ac);
       }
     }
-    if (req.method === 'POST' && toolMatch && this.deps.tools.get(toolMatch[1])) {
+    if (req.method === 'POST' && toolMatch && (this.deps.tools.get(toolMatch[1]) || (toolMatch[1] === REQUEST_TABS_TOOL.name && this.own(client)))) {
       const args = ((await readBody(req)) ?? {}) as Record<string, any>;
       this.deps.noteClient(client);
       const ac = this.deps.trackAbort();
       req.on('close', () => !res.writableEnded && ac.abort());
       try {
-        const r = await this.deps.tools.call(toolMatch[1], args, { browser: this.deps.browser, source: client, signal: ac.signal });
+        const r = await this.runTool(client, toolMatch[1], args, ac.signal);
         if (url.searchParams.get('format') === 'text') return send(res, r.isError ? 422 : 200, r.text);
         return send(res, 200, r);
       } finally {
@@ -268,8 +312,8 @@ export class ControlServer {
     let lastErr: unknown;
     for (let i = 0; i < 10; i++) {
       try {
-        this.server = await tryPort(preferredPort + i);
-        this.port = preferredPort + i;
+        this.server = await tryPort(preferredPort === 0 ? 0 : preferredPort + i);
+        this.port = (this.server.address() as { port: number }).port;
         return this.port;
       } catch (err) {
         lastErr = err;

@@ -217,7 +217,7 @@ export function diffSize(d: Diff) {
 
 export function formatDiff(d: Diff, pageUrl: string): string {
   const n = diffSize(d);
-  if (!n) return 'No visible change to the elements on the page.';
+  if (!n) return 'No buttons, links or fields changed.';
   const out: string[] = [`Changes: ${d.added.length} new, ${d.removed.length} gone, ${d.changed.length} changed`];
   const added = [...d.added].sort((x, y) => Number(y.inView) - Number(x.inView));
   for (const e of added.slice(0, 30)) out.push(`+ ${elLine(e, pageUrl)}`);

@@ -118,6 +118,16 @@ export type Command =
   // ----- import -----
   /** Imports spaces, pinned tabs, folders, favourites and open tabs from another browser on this Mac. Returns an ImportReport. */
   | { type: 'import.run'; source: string }
+  // ----- agent profiles -----
+  /** Answer to an agent's request_tabs: the tabs to share (copies open in its window), or null to decline. */
+  | { type: 'agents.share'; requestId: string; tabIds: TabId[] | null }
+  /** Where an agent works: its own profile ('own'), the user's ('shared'), or back to the default (null). */
+  | { type: 'agents.access'; clientId: string; access: 'own' | 'shared' | null }
+  | { type: 'agents.defaultAccess'; access: 'own' | 'shared' }
+  /** Brings an agent's own browser window to the front (starting it if needed). */
+  | { type: 'agents.show'; clientId: string }
+  /** Quits an agent's browser and deletes its profile (cookies, logins, tabs). */
+  | { type: 'agents.reset'; clientId: string }
   // ----- backup (optional, encrypted) -----
   /** Sets where backups go, how often, and the passphrase / GitHub token (null removes, undefined keeps). */
   | { type: 'backup.configure'; target?: BackupTarget | null; schedule?: Settings['backup']['schedule']; keep?: number; passphrase?: string | null; githubToken?: string | null }

@@ -286,6 +286,22 @@ export class PageController {
 
   // ---------- snapshots ----------
 
+  /** Which iframe element (index in its parent document) each frame is, from the last frameOffsets. */
+  private frameIndex = new Map<number, number>();
+
+  /** Scrolls a frame (and the frames around it) into view in every ancestor document. */
+  private async scrollFrameIntoView(f: WebFrameMain) {
+    const chain: WebFrameMain[] = [];
+    for (let cur: WebFrameMain | null = f; cur && cur !== this.main && cur.parent; cur = cur.parent) chain.push(cur);
+    // outermost first, so inner frames are measured after their parents moved
+    for (const cur of chain.reverse()) {
+      const idx = this.frameIndex.get(cur.frameTreeNodeId);
+      if (idx === undefined || !cur.parent) continue;
+      await this.call(cur.parent, 'scrollChildFrame', { index: idx }, 1500).catch(() => false);
+    }
+    await sleep(60);
+  }
+
   private async frameOffsets(frames: WebFrameMain[]): Promise<Map<number, { x: number; y: number; w: number; h: number }>> {
     const out = new Map<number, { x: number; y: number; w: number; h: number }>();
     out.set(this.main.frameTreeNodeId, { x: 0, y: 0, w: 1e6, h: 1e6 });
@@ -314,6 +330,7 @@ export class PageController {
         if (idx < 0 && rects.length === kids.length) idx = i;
         if (idx < 0) return;
         used.add(idx);
+        this.frameIndex.set(k.frameTreeNodeId, idx);
         const r = rects[idx].rect;
         out.set(k.frameTreeNodeId, { x: pOff.x + r[0], y: pOff.y + r[1], w: r[2], h: r[3] });
       });
@@ -463,7 +480,20 @@ export class PageController {
       return { x: o.x, y: o.y };
     };
     const finish = async (f: WebFrameMain, res: Resolved): Promise<Located> => {
-      const offset = await offsetOf(f);
+      let offset = await offsetOf(f);
+      if (f !== this.main) {
+        // the element is in view inside its frame, but the frame itself may be off-screen
+        const vp = await this.call(this.main, 'viewport', {}, 1500).catch(() => null);
+        const px = res.x + offset.x;
+        const py = res.y + offset.y;
+        if (vp && (px < 0 || py < 0 || px > vp.w || py > vp.h)) {
+          await this.scrollFrameIntoView(f);
+          offsets = null;
+          offset = await offsetOf(f);
+          const again = await this.call(f, 'resolve', { target: { ref: res.ref }, action }, 3000).catch(() => null);
+          if (again?.ok) res = again as Resolved;
+        }
+      }
       const g = this.gref(f.frameTreeNodeId, res.doc, res.ref, res.role, res.name);
       return {
         frame: f,
@@ -521,6 +551,9 @@ export class PageController {
 
   async click(loc: Located, opts: { label: string; button?: 'left' | 'right' | 'middle'; count?: number; modifiers?: number }) {
     await this.ensureCdp();
+    const vp = await this.call(this.main, 'viewport', {}, 1500).catch(() => null);
+    if (vp && (loc.res.x < 0 || loc.res.y < 0 || loc.res.x > vp.w || loc.res.y > vp.h))
+      throw new Error(`${opts.label} is outside the visible page (at ${Math.round(loc.res.x)},${Math.round(loc.res.y)} in a ${vp.w}×${vp.h} view); scroll to it first`);
     await this.animate(loc, opts.label, true);
     const { x, y } = loc.res;
     const button = opts.button ?? 'left';
@@ -624,12 +657,28 @@ export class PageController {
     }
   }
 
+  /** Child frames worth reading (not blank, not ad/tracker frames). */
+  childFrames(): WebFrameMain[] {
+    return this.frames().filter((f) => f !== this.main && /^https?:/.test(f.url) && !/doubleclick|googlesyndication|adservice|amazon-adsystem|facebook\.com\/plugins|recaptcha/.test(f.url));
+  }
+
+  // every frame watches: a form inside an iframe shows its confirmation there
   async watchStart() {
-    await this.call(this.main, 'watchStart', {}, 1500).catch(() => {});
+    await Promise.all([this.main, ...this.childFrames()].map((f) => this.call(f, 'watchStart', {}, 1500).catch(() => {})));
   }
 
   async watchCollect(): Promise<WatchResult | null> {
-    return this.call(this.main, 'watchCollect', {}, 2500).catch(() => null);
+    const all = await Promise.all([this.main, ...this.childFrames()].map((f) => this.call(f, 'watchCollect', {}, 2500).catch(() => null)));
+    const main = all[0];
+    if (!main) return null;
+    for (const r of all.slice(1)) {
+      if (!r) continue;
+      for (const t of r.added) if (!main.added.includes(t) && main.added.length < 16) main.added.push(t);
+      for (const t of r.alerts) if (!main.alerts.includes(t)) main.alerts.push(t);
+      main.mutations += r.mutations;
+      main.quietMs = Math.min(main.quietMs, r.quietMs);
+    }
+    return main;
   }
 
   // ---------- capture ----------

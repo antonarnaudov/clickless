@@ -15,6 +15,8 @@ interface Opts {
   baseURI: string;
   /** Keep link URLs inline (costs tokens). */
   links: boolean;
+  /** Inside a closed <details>: its text isn't rendered, but agents should still read it. */
+  collapsed?: boolean;
 }
 
 function abs(href: string, base: string): string {
@@ -25,8 +27,19 @@ function abs(href: string, base: string): string {
   }
 }
 
+/** Children as rendered: an open shadow root's content instead of the light DOM, a slot's assigned nodes. */
+function childrenOf(el: Element): Node[] {
+  const sr = (el as HTMLElement).shadowRoot;
+  if (sr) return Array.from(sr.childNodes);
+  if (el.tagName === 'SLOT') {
+    const assigned = (el as HTMLSlotElement).assignedNodes({ flatten: true });
+    if (assigned.length) return assigned;
+  }
+  return Array.from(el.childNodes);
+}
+
 function isHidden(el: Element, o: Opts): boolean {
-  if (!o.live) return el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true';
+  if (!o.live || o.collapsed) return el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true';
   if (el.id === OVERLAY_ID) return true;
   const he = el as HTMLElement;
   if (typeof he.checkVisibility === 'function') return !he.checkVisibility({ visibilityProperty: true } as any);
@@ -40,7 +53,7 @@ function inline(node: Node, o: Opts): string {
   const el = node as Element;
   if (SKIP.has(el.tagName)) return el.tagName === 'BUTTON' && !o.live ? '' : '';
   if (isHidden(el, o)) return '';
-  const kids = () => Array.from(el.childNodes).map((n) => inline(n, o)).join('');
+  const kids = () => childrenOf(el).map((n) => inline(n, o)).join('');
   switch (el.tagName) {
     case 'BR':
       return '\n';
@@ -128,6 +141,19 @@ function block(el: Element, o: Opts, depth: number): string {
     return t ? `${'#'.repeat(Number(tag[1]))} ${t}` : '';
   }
   switch (tag) {
+    case 'DETAILS': {
+      // FAQs and accordions: include the collapsed text too, marked, so nobody has to open each one
+      const closed = !(el as HTMLDetailsElement).open;
+      const summary = el.querySelector(':scope > summary');
+      const head = summary ? inlineChildren(summary, o).trim() : '';
+      const o2 = closed ? { ...o, collapsed: true } : o;
+      const body = Array.from(el.childNodes)
+        .filter((n) => n !== summary)
+        .map((n) => (n.nodeType === 1 ? block(n as Element, o2, depth) : (n.textContent || '').trim()))
+        .filter(Boolean)
+        .join('\n\n');
+      return [head ? `**${head}**${closed ? ' _(collapsed)_' : ''}` : '', body].filter(Boolean).join('\n');
+    }
     case 'HR':
       return '---';
     case 'PRE':
@@ -173,10 +199,10 @@ function blockChildren(el: Element, o: Opts, depth: number): string {
     if (t) parts.push(t);
     buf = '';
   };
-  for (const n of Array.from(el.childNodes)) {
+  for (const n of childrenOf(el)) {
     if (n.nodeType === 1) {
       const c = n as Element;
-      if (BLOCK.has(c.tagName) || /^H[1-6]$/.test(c.tagName) || ['UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE', 'HR'].includes(c.tagName)) {
+      if (BLOCK.has(c.tagName) || /^H[1-6]$/.test(c.tagName) || ['UL', 'OL', 'TABLE', 'PRE', 'BLOCKQUOTE', 'HR', 'DETAILS', 'SLOT'].includes(c.tagName) || (c as HTMLElement).shadowRoot) {
         flush();
         const b = block(c, o, depth);
         if (b.trim()) parts.push(b);

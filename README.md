@@ -48,7 +48,9 @@ Now: “(untitled)” — https://httpbin.org/post (new page) · tab t2 · 3049m
 - **AI search** (`⌘J`): searches, reads the top pages and answers with numbered citations, with follow-ups. Works with any model you configure.
 - **Agent panel** (`⌘E`): chat with an agent about the page or give it a task. You see every step, and an animated cursor and highlight on the page while it works. Pause or stop any agent at any time (`⌘.`).
 - **Tidy tabs** (`⇧⌘O`): groups Today's tabs into named folders and suggests closing duplicates.
-- Split view, find in page, downloads, per-site permissions, Arc-style keyboard shortcuts (`⌘S` sidebar, `⌘D` pin, `Ctrl+1…9` spaces, `⌘1…9` tabs).
+- **Split view, 2–4 panes**: drag a tab from the sidebar onto the page (left, right, next to a pane, or onto one to replace it); drag a pane by its grip to move or swap it, or back onto the sidebar to take it out. Taking a pane out never closes its tab.
+- **History** (`⌘Y`): every site you've visited by day, searchable, deletable; clear the last hour, today or everything. `⇧⌘T` reopens closed tabs with their own back/forward history, in their old place, even after a restart.
+- Find in page, downloads, per-site permissions, Arc-style keyboard shortcuts (`⌘T` new tab, `⌘W` close, `⌘L` address, `⌘[`/`⌘]` back/forward, `⌃Tab` next tab, `⌘S` sidebar, `⌘D` pin, `⌃1…9` spaces, `⌘1…9` tabs). On Windows and Linux, `Ctrl` instead of `⌘`.
 - **Move in from Arc, Comet, Chrome, Brave or Edge** (Settings → Tabs, or `clickless import arc`): spaces, pinned tabs, folders, favourites and their icons from Arc; bookmarks and the tabs you had open from Chromium browsers. Run it again any time; nothing is duplicated. Passwords and logins are never read.
 
 ## Download and install
@@ -80,7 +82,9 @@ Your own app bundle: `npm run dist`, then move `release/mac-arm64/Clickless.app`
 
 ## Connect an agent
 
-Settings → **Agents & API** shows every snippet below with your token filled in.
+Settings → **Agents & API**: pick your agent (Claude Code, Codex, Gemini CLI, Cursor, Claude Desktop, VS Code, Windsurf, any MCP client, HTTP, the CLI) and copy its setup, with your token filled in.
+
+**Agents get their own browser.** An agent that connects over MCP works in its own Clickless profile and window: its own cookies, logins, history and tabs, not yours. When it needs one of your pages it calls `request_tabs`; you pick which tabs to share and copies open in its window (it isn't signed in as you). Per agent, Settings → Agents & API → Agent profiles can switch it to your profile instead, show its window, or reset its profile. Your own scripts (HTTP, the `clickless` CLI) use your browser.
 
 **Claude Code**
 
@@ -88,7 +92,7 @@ Settings → **Agents & API** shows every snippet below with your token filled i
 claude mcp add --scope user --transport http clickless http://127.0.0.1:7734/mcp --header "Authorization: Bearer <token>"
 ```
 
-**Any MCP client** (Claude Desktop, Cursor, Windsurf, Zed, Codex, Cline…), stdio:
+**Any MCP client** (Claude Desktop, Cursor, Windsurf, Zed, Codex, Cline…), stdio (from source; Settings shows the path for the installed app, which needs no Node):
 
 ```json
 { "mcpServers": { "clickless": { "command": "node", "args": ["/path/to/clickless/dist/cli/clickless.js", "mcp"] } } }
@@ -168,6 +172,8 @@ src/
 Each tab is a native Chromium view (Electron `WebContentsView`). The engine is a preload script loaded into every frame in an isolated world; the main process talks to it over IPC and sends real mouse and keyboard input through the DevTools protocol.
 
 ## Development
+
+Agent benchmark: `npm run bench:agent` runs Claude Code through six realistic tasks on a local test site (multi-step signup, shop checkout, a paged table, a form in a cross-origin iframe inside shadow DOM, a task across two tabs, the real web) and scores each by what the site recorded.
 
 ```bash
 npm run dev          # build everything and start

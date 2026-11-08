@@ -20,6 +20,9 @@ import { ArrowLeft, ArrowRight, ChevronRight, Columns2, Copy, CopyPlus, Download
 import type { Download as DownloadT, Folder, Space, Tab, UIState } from '../../shared/types';
 import { cmd } from '../common/api';
 import { splitDrag } from './dnd';
+import { BrandIcon } from '../common/BrandIcon';
+import { agentClient } from '../../shared/agents';
+import type { AgentProfileStatus } from '../../shared/types';
 import { Favicon } from '../common/Favicon';
 import { buildSidebar, cx, displayUrl, formatBytes, hostOf, isSecure, type SidebarModel } from '../common/util';
 import { useContextMenu, type MenuItem } from './ContextMenu';
@@ -286,6 +289,7 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
             </button>
           </div>
 
+          {state.profile.kind === 'agent' && <AgentBadge id={state.profile.id} name={state.profile.name} />}
           {showUrl && <UrlField tab={active} />}
           <AskRow open={state.panel.open} />
 
@@ -312,6 +316,7 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
           </div>
 
           <AgentCard state={state} />
+          <AgentWindows list={state.agentProfiles} />
           <Footer state={state} dragging={!!dragTab} />
         </div>
 
@@ -963,3 +968,37 @@ function Downloads({ downloads, onClose }: { downloads: DownloadT[]; onClose(): 
   );
 }
 
+
+/** In an agent's own browser: whose browser this is. */
+function AgentBadge({ id, name }: { id: string; name: string }) {
+  const info = agentClient(id);
+  return (
+    <div className="agent-badge" title="A separate browser profile: its own cookies, logins and tabs. Your tabs stay private.">
+      <BrandIcon name={info.brand ?? info.id} size={15} tile={26} />
+      <span>
+        <b>{name}’s browser</b>
+        <span>Separate profile</span>
+      </span>
+    </div>
+  );
+}
+
+/** In your browser: agents that are working in their own windows. */
+function AgentWindows({ list }: { list: AgentProfileStatus[] }) {
+  const running = list.filter((a) => a.running);
+  if (!running.length) return null;
+  return (
+    <div className="agent-windows">
+      {running.map((a) => {
+        const info = agentClient(a.id);
+        return (
+          <button key={a.id} className="row agent-window" title={`Show ${a.name}’s window`} onClick={() => cmd({ type: 'agents.show', clientId: a.id })}>
+            <BrandIcon name={info.brand ?? info.id} size={13} tile={20} />
+            <span className="title truncate">{a.name} · own window</span>
+            <span className="kbd">{a.tabs ?? 0} tab{a.tabs === 1 ? '' : 's'}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

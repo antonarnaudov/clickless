@@ -39,6 +39,7 @@ import type { ActOptions, Browser, HeadlessPage, ObserveOptions, ReadOptions, Sc
 import { runAct, type ActHost } from './act';
 import { PageController } from './page';
 import type { BackupService } from './backup-service';
+import type { AgentProfiles } from './agent-profiles';
 import { countPlan, readSource, type ImportNode, type ImportPlan, type ImportReport } from './importers';
 import { Headless } from './headless';
 import { History, Secrets, flushState, saveStateSoon, type ClosedTab, type PersistedState, type PersistedTab } from './store';
@@ -77,6 +78,10 @@ export class Clickless implements Browser {
   readonly history = new History();
   /** Encrypted backups (set in index.ts). */
   backups?: BackupService;
+  /** Agents' own browser profiles (main browser only; set in index.ts). */
+  agentProfiles?: AgentProfiles;
+  /** This process is the user's browser or an agent's own profile (CLICKLESS_AGENT_PROFILE). */
+  profile: UIState['profile'] = { kind: 'user' };
   readonly secrets = new Secrets();
 
   private tabs = new Map<TabId, Tab>();
@@ -318,21 +323,24 @@ export class Clickless implements Browser {
     });
   }
 
+  /** Web preferences of every page: also used for tabs a page opens itself (target=_blank, window.open). */
+  private pagePrefs(): Electron.WebPreferences {
+    return {
+      preload: preloadPath('content'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      nodeIntegrationInSubFrames: true,
+      partition: PARTITION,
+      scrollBounce: true,
+      spellcheck: true,
+    };
+  }
+
   private createView(tab: Tab, adopt?: Electron.BrowserWindowConstructorOptions): WebContentsView {
     const view = adopt
-      ? new WebContentsView(adopt as any)
-      : new WebContentsView({
-          webPreferences: {
-            preload: preloadPath('content'),
-            sandbox: true,
-            contextIsolation: true,
-            nodeIntegration: false,
-            nodeIntegrationInSubFrames: true,
-            partition: PARTITION,
-            scrollBounce: true,
-            spellcheck: true,
-          },
-        });
+      ? new WebContentsView({ ...(adopt as any), webPreferences: { ...(adopt.webPreferences ?? {}), ...this.pagePrefs() } })
+      : new WebContentsView({ webPreferences: this.pagePrefs() });
     view.setBorderRadius(10);
     view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1b1a22' : '#ffffff');
     const wc = view.webContents;
@@ -440,6 +448,8 @@ export class Clickless implements Browser {
       return {
         action: 'allow',
         outlivesOpener: true,
+        // without this the new page gets no content preload: the agent engine wouldn't run in it
+        overrideBrowserWindowOptions: { webPreferences: this.pagePrefs() },
         createWindow: (options) => {
           const t = this.newTabRecord(details.url, { spaceId: tab()?.spaceId, openerTabId: id });
           const view = this.createView(t, options);
@@ -640,6 +650,8 @@ export class Clickless implements Browser {
       platform: process.platform as UIState['platform'],
       fullscreen: this.fullscreen,
       backup: this.backups?.status() ?? { hasPassphrase: false, hasGithubToken: false, running: false },
+      profile: this.profile,
+      agentProfiles: this.agentProfiles?.status() ?? [],
     };
   }
 
@@ -1147,6 +1159,22 @@ export class Clickless implements Browser {
     this.layout();
   }
 
+  overlayKind(): OverlayState | null {
+    return this.overlayState;
+  }
+
+  /** Shows the window and brings the app forward (e.g. an agent is asking for something). */
+  bringToFront() {
+    if (!this.win || this.win.isDestroyed()) return;
+    if (this.win.isMinimized()) this.win.restore();
+    // test copies (CLICKLESS_NO_FOCUS) ask without jumping in front of whatever you're doing
+    if (process.env.CLICKLESS_NO_FOCUS) return this.win.showInactive();
+    this.win.show();
+    this.win.focus();
+    app.focus({ steal: true });
+    if (process.platform === 'darwin') app.dock?.bounce('informational');
+  }
+
   setOverlay(o: OverlayState | null) {
     this.overlayState = o;
     this.layout();
@@ -1458,6 +1486,12 @@ export class Clickless implements Browser {
     await ctl.waitReady(10000);
     const r = await ctl.call(ctl.main, 'read', { mode: opts.mode ?? 'article', links: !!opts.links }, 15000);
     let md = r.markdown || '(no readable text on this page)';
+    // content inside iframes (embedded forms, widgets, docs) comes after, as its own sections
+    for (const f of ctl.childFrames().slice(0, 4)) {
+      const fr = await ctl.call(f, 'read', { mode: 'full', links: !!opts.links }, 4000).catch(() => null);
+      const text = fr?.markdown?.trim();
+      if (text && text.length > 10) md += `\n\n## In frame: ${fr!.title || new URL(f.url).host}\n\n${text.slice(0, 6000)}`;
+    }
     const header = [`# ${r.title}`, r.url + (r.byline ? ` · ${r.byline}` : '')];
     if (opts.query) {
       const qs = opts.query.trim();
