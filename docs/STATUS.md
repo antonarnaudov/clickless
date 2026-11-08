@@ -2,7 +2,7 @@
 _Updated 2026-11-07._
 
 ## Live
-- **v0.1.0 released 2026-11-08**: github.com/antonarnaudov/clickless/releases/latest (macOS DMG/ZIP, Apple silicon + Intel, built by GitHub Actions, ad-hoc signed, not notarized). Also runs from source (`npm run dev`). Source: github.com/antonarnaudov/clickless (moves to the `clicklessbrowser` org once it exists; GitHub redirects the old links).
+- **v0.2.0 released 2026-11-08** (agent profiles, split view drag and drop, History, connector logos, benchmark fixes); v0.1.0 earlier the same day: github.com/antonarnaudov/clickless/releases/latest (macOS DMG/ZIP, Apple silicon + Intel, built by GitHub Actions, ad-hoc signed, not notarized). Also runs from source (`npm run dev`). Source: github.com/antonarnaudov/clickless (moves to the `clicklessbrowser` org once it exists; GitHub redirects the old links).
 
 ## Verified (2026-11-07, Electron 45.2.3, macOS 27)
 - Claude Code (Sonnet) over MCP: filled and submitted the httpbin pizza form; HN + form task in 7 tool calls; GitHub-trending research in 3 steps through the built-in agent with the Claude Code provider; side panel shows steps live with glow, Pause/Stop.
