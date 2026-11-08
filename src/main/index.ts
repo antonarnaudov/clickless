@@ -28,6 +28,11 @@ registerSchemes();
 const state = loadState();
 if (state.settings.control.cdpPort) app.commandLine.appendSwitch('remote-debugging-port', String(state.settings.control.cdpPort));
 nativeTheme.themeSource = state.settings.appearance.theme;
+// Dev/test copies keep drawing while hidden behind other windows, so captures and replayed input work.
+if (process.env.CLICKLESS_DEBUG) {
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+  app.commandLine.appendSwitch('disable-renderer-backgrounding');
+}
 
 let browser: Clickless;
 let runCmd: ((c: any) => Promise<unknown>) | null = null;
@@ -49,6 +54,9 @@ async function startControl() {
     noteClient: (n) => browser.noteClient(n),
     debugCapture: () => browser.debugCapture(),
     debugCommand: (c) => (runCmd ? runCmd(c) : Promise.resolve(null)),
+    debugShellMouse: (steps) => browser.debugShellMouse(steps as any),
+    debugShellEval: (code) => browser.debugShellEval(code),
+    debugMenu: (acc) => browser.debugMenu(acc),
     importSources: () => listSources(),
     importFrom: (source) => browser.importFrom(source),
     backupStatus: () => {
@@ -109,6 +117,7 @@ function controlSecrets() {
     ),
     curlExample: `curl -s ${url}/v1/act -H "Authorization: Bearer ${token}" -d '{"script":"goto news.ycombinator.com"}'`,
     cliExample: `${run} act 'goto news.ycombinator.com; click "new"'`,
+    stdio,
   };
 }
 
@@ -142,6 +151,11 @@ app.whenReady().then(async () => {
   });
   runCmd = runCommand as any;
   buildMenu(browser, runCommand);
+  let menuTimer: ReturnType<typeof setTimeout> | null = null;
+  browser.onMenuChange = () => {
+    if (menuTimer) clearTimeout(menuTimer);
+    menuTimer = setTimeout(() => buildMenu(browser, runCommand), 300);
+  };
   browser.createWindow();
   await startControl();
 });

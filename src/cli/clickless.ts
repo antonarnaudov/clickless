@@ -17,7 +17,7 @@ interface Discovery {
   launch?: { command: string; args: string[] };
 }
 
-const DISCOVERY = path.join(os.homedir(), '.clickless', 'control.json');
+const DISCOVERY = path.join(process.env.CLICKLESS_HOME ? path.resolve(process.env.CLICKLESS_HOME) : path.join(os.homedir(), '.clickless'), 'control.json');
 
 function readDiscovery(): Discovery | null {
   try {

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Copy, Eye, EyeOff, KeyRound, Laptop, LayoutGrid, Moon, Plug, RefreshCw, Search, ShieldCheck, Sparkles, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, KeyRound, Laptop, LayoutGrid, Moon, Plug, RefreshCw, Search, ShieldCheck, Sparkles, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Command, DeepPartial, QueryMap } from '../../shared/ipc';
 import { PROVIDER_PRESETS, SEARCH_ENGINES, type ProviderPreset } from '../../shared/settings';
 import type { ImportReport, ImportSource, OverlayState, ProviderConfig, Settings as SettingsT, UIState } from '../../shared/types';
 import { cmd, query } from '../common/api';
-import { copyText, cx, debounce, letterColor, timeAgo } from '../common/util';
+import { BrandIcon, PROVIDER_BRAND, providerBrand } from '../common/BrandIcon';
+import { agentClient } from '../../shared/agents';
+import { copyText, cx, debounce, timeAgo } from '../common/util';
 
 type Section = NonNullable<Extract<OverlayState, { kind: 'settings' }>['section']>;
 
@@ -203,26 +205,38 @@ function AI({ s }: { s: SettingsT }) {
 
       <div className="s-group">
         <div className="lbl">Add a provider</div>
-        <div className="presets">
-          {PROVIDER_PRESETS.map((p) => (
-            <button
-              key={p.preset}
-              className="preset"
-              onClick={() => {
-                setEditing(null);
-                setDraft(p);
-              }}
-            >
-              <span className="prov-logo" style={{ background: letterColor(p.label), width: 28, height: 28, fontSize: 12 }}>
-                {p.label[0]}
-              </span>
-              <span>
-                <b>{p.label}</b>
-                <span>{p.help}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        {[
+          { title: 'On this Mac', desc: 'Free and private: nothing leaves your Mac (Claude Code uses your own Claude login).', keys: ['claude-code', 'ollama', 'lmstudio'] },
+          { title: 'Cloud', desc: 'Bring your own API key.', keys: PROVIDER_PRESETS.map((p) => p.preset).filter((k) => !['claude-code', 'ollama', 'lmstudio'].includes(k)) },
+        ].map((g) => (
+          <div key={g.title} className="preset-group">
+            <div className="pg-head">
+              <b>{g.title}</b>
+              <span>{g.desc}</span>
+            </div>
+            <div className="presets">
+              {g.keys
+                .map((k) => PROVIDER_PRESETS.find((p) => p.preset === k))
+                .filter((p): p is ProviderPreset => !!p)
+                .map((p) => (
+                  <button
+                    key={p.preset}
+                    className="preset"
+                    onClick={() => {
+                      setEditing(null);
+                      setDraft(p);
+                    }}
+                  >
+                    <BrandIcon name={PROVIDER_BRAND[p.preset] ?? 'custom'} />
+                    <span>
+                      <b>{p.label}</b>
+                      <span>{p.help}</span>
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        ))}
       </div>
     </>
   );
@@ -268,9 +282,7 @@ function ProviderCard({ p, preset, editing, onEdit, isAgent, isAsk }: { p: Provi
   return (
     <div className={cx('prov', editing && 'editing')}>
       <div className="prov-head">
-        <span className="prov-logo" style={{ background: letterColor(p.label) }}>
-          {p.kind === 'claude-code' ? <Bot size={16} /> : p.label[0]}
-        </span>
+        <BrandIcon name={preset ? (PROVIDER_BRAND[preset.preset] ?? 'custom') : providerBrand(p)} size={18} tile={32} />
         <div className="meta">
           <b>{isNew ? `New ${p.label}` : p.label}</b>
           <span className="truncate mono" style={{ fontSize: 11.5 }}>
@@ -443,12 +455,10 @@ function Agents({ state }: { state: UIState }) {
     }
   };
   const clients = [...state.agent.clients].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
-  const snippets: { k: string; title: string; text?: string }[] = [
-    { k: 'claude', title: 'Claude Code — run once in a terminal', text: secrets?.claudeCodeCommand },
-    { k: 'mcp', title: 'Any MCP client (Claude Desktop, Cursor, Codex, Windsurf…)', text: secrets?.mcpJson },
-    { k: 'cli', title: 'Shell agents & scripts — the clickless CLI', text: secrets?.cliExample },
-    { k: 'http', title: 'HTTP — local LLMs, Python, n8n, anything', text: secrets?.curlExample },
-  ];
+  const live = new Set(clients.filter((cl) => Date.now() - cl.lastSeenAt < 30 * 60_000).map((cl) => agentClient(cl.name).id));
+  const snippets = secrets ? agentSnippets(secrets) : [];
+  const [pick, setPick] = useState('claude-code');
+  const sel = snippets.find((x) => x.id === pick) ?? snippets[0];
   return (
     <>
       <div className="s-group">
@@ -465,6 +475,73 @@ function Agents({ state }: { state: UIState }) {
             <span>{c.error ? `Control API failed: ${c.error}` : 'Control API is off.'}</span>
           )}
         </div>
+      </div>
+
+      <div className="s-group">
+        <div className="lbl">Connect an agent</div>
+        <div className="desc">Pick yours: the setup below has this Mac's address and token filled in.</div>
+        <div className="agent-tiles">
+          {AGENT_TILES.map((t) => (
+            <button key={t.id} className={cx('agent-tile', pick === t.id && 'on')} onClick={() => setPick(t.id)} title={t.name}>
+              <BrandIcon name={t.brand} size={20} tile={36} />
+              <span className="truncate">{t.name}</span>
+              {live.has(t.id as any) && <span className="live-dot" title="Connected recently" />}
+            </button>
+          ))}
+        </div>
+        {sel ? (
+          <div className="snippet">
+            <div className="sh">
+              <span>
+                <b>{sel.name}</b> · {sel.where}
+              </span>
+              <button className="btn btn-ghost btn-sm" onClick={() => copy(sel.id, sel.text)}>
+                {copied === sel.id ? (
+                  <>
+                    <Check size={12} style={{ color: 'var(--ok)' }} /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy size={12} /> Copy
+                  </>
+                )}
+              </button>
+            </div>
+            <pre>{sel.text}</pre>
+            {sel.note && <div className="snippet-note">{sel.note}</div>}
+          </div>
+        ) : (
+          <div className="snippet">
+            <pre>{c.running ? 'Loading…' : 'Turn the control API on to get this.'}</pre>
+          </div>
+        )}
+      </div>
+
+      {clients.length > 0 && (
+        <div className="s-group">
+          <div className="lbl">Connected agents</div>
+          <div className="client-list">
+            {clients.map((cl) => {
+              const k = agentClient(cl.name);
+              const on = Date.now() - cl.lastSeenAt < 5 * 60_000;
+              return (
+                <div key={cl.name} className="client-row">
+                  <BrandIcon name={k.brand ?? k.id} size={16} tile={28} />
+                  <b>{k.id === 'mcp' ? cl.name : k.name}</b>
+                  <span className="mono truncate">{k.id === 'mcp' || k.name === cl.name ? '' : cl.name}</span>
+                  <span className="when">
+                    {cl.calls} calls · {timeAgo(cl.lastSeenAt)}
+                  </span>
+                  <span className={cx('live-dot', !on && 'off')} title={on ? 'Active in the last 5 minutes' : 'Idle'} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="s-group">
+        <div className="lbl">Access</div>
         <Row title="Allow agents to connect" desc="Local HTTP + MCP server on 127.0.0.1 only.">
           <Switch label="Allow agents" on={s.control.enabled} onChange={(enabled) => update({ control: { enabled } })} />
         </Row>
@@ -493,42 +570,6 @@ function Agents({ state }: { state: UIState }) {
           </button>
         </Row>
       </div>
-
-      <div className="s-group">
-        <div className="lbl">Connect</div>
-        {snippets.map((sn) => (
-          <div key={sn.k} className="snippet">
-            <div className="sh">
-              <span>{sn.title}</span>
-              <button className="btn btn-ghost btn-sm" disabled={!sn.text} onClick={() => sn.text && copy(sn.k, sn.text)}>
-                {copied === sn.k ? (
-                  <>
-                    <Check size={12} style={{ color: 'var(--ok)' }} /> Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy size={12} /> Copy
-                  </>
-                )}
-              </button>
-            </div>
-            <pre>{sn.text ?? (c.running ? 'Loading…' : 'Turn the control API on to get this.')}</pre>
-          </div>
-        ))}
-      </div>
-
-      {clients.length > 0 && (
-        <div className="s-group">
-          <div className="lbl">Seen recently</div>
-          <div className="clients">
-            {clients.map((cl) => (
-              <span key={cl.name} className={cx('tag', Date.now() - cl.lastSeenAt < 5 * 60_000 && 'ok')}>
-                {cl.name} · {cl.calls} calls · {timeAgo(cl.lastSeenAt)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="s-group">
         <div className="lbl">Agent behaviour</div>
@@ -884,4 +925,44 @@ function Backup({ s, status }: { s: SettingsT; status: UIState['backup'] }) {
       </div>
     </>
   );
+}
+
+// ---------- agent setup snippets ----------
+
+const AGENT_TILES: { id: string; name: string; brand: string }[] = [
+  { id: 'claude-code', name: 'Claude Code', brand: 'claude-code' },
+  { id: 'codex', name: 'Codex', brand: 'codex' },
+  { id: 'gemini-cli', name: 'Gemini CLI', brand: 'gemini-cli' },
+  { id: 'cursor', name: 'Cursor', brand: 'cursor' },
+  { id: 'claude-desktop', name: 'Claude Desktop', brand: 'claude' },
+  { id: 'vscode', name: 'VS Code', brand: 'copilot' },
+  { id: 'windsurf', name: 'Windsurf', brand: 'windsurf' },
+  { id: 'mcp', name: 'Other MCP', brand: 'mcp' },
+  { id: 'http', name: 'HTTP API', brand: 'http' },
+  { id: 'cli', name: 'Shell & scripts', brand: 'cli' },
+];
+
+function agentSnippets(sec: QueryMap['controlSecrets']['result']) {
+  const auth = { Authorization: `Bearer ${sec.token}` };
+  const j = (o: unknown) => JSON.stringify(o, null, 2);
+  const st = sec.stdio;
+  const toml = [
+    '[mcp_servers.clickless]',
+    `command = ${JSON.stringify(st.command)}`,
+    `args = [${st.args.map((a) => JSON.stringify(a)).join(', ')}]`,
+    ...(st.env ? [`env = { ${Object.entries(st.env).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(', ')} }`] : []),
+  ].join('\n');
+  const bridge = 'Starts the Clickless bridge, which finds the browser and its token on this Mac by itself.';
+  return [
+    { id: 'claude-code', name: 'Claude Code', where: 'run once in a terminal', text: sec.claudeCodeCommand },
+    { id: 'codex', name: 'Codex', where: 'add to ~/.codex/config.toml', text: toml, note: bridge },
+    { id: 'gemini-cli', name: 'Gemini CLI', where: 'add to ~/.gemini/settings.json', text: j({ mcpServers: { clickless: { httpUrl: sec.mcpUrl, headers: auth } } }) },
+    { id: 'cursor', name: 'Cursor', where: 'add to ~/.cursor/mcp.json', text: j({ mcpServers: { clickless: { url: sec.mcpUrl, headers: auth } } }) },
+    { id: 'claude-desktop', name: 'Claude Desktop', where: 'add to ~/Library/Application Support/Claude/claude_desktop_config.json, then restart Claude', text: j({ mcpServers: { clickless: st } }), note: bridge },
+    { id: 'vscode', name: 'VS Code (Copilot agent mode)', where: 'add to .vscode/mcp.json, or “MCP: Open User Configuration”', text: j({ servers: { clickless: { type: 'http', url: sec.mcpUrl, headers: auth } } }) },
+    { id: 'windsurf', name: 'Windsurf', where: 'add to ~/.codeium/windsurf/mcp_config.json', text: j({ mcpServers: { clickless: { serverUrl: sec.mcpUrl, headers: auth } } }) },
+    { id: 'mcp', name: 'Any MCP client', where: 'Streamable HTTP, or the stdio bridge for clients without HTTP', text: sec.mcpJson },
+    { id: 'http', name: 'HTTP API', where: 'local models, Python, n8n — anything that speaks HTTP', text: sec.curlExample },
+    { id: 'cli', name: 'Shell & scripts', where: 'the clickless CLI', text: sec.cliExample },
+  ] as { id: string; name: string; where: string; text: string; note?: string }[];
 }

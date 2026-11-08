@@ -1,32 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Archive,
-  ArrowRight,
-  Code,
-  Columns2,
-  Command as CommandIcon,
-  Copy,
-  CornerDownLeft,
-  FolderPlus,
-  Globe,
-  History,
-  Layers,
-  PanelLeft,
-  Pause,
-  Pin,
-  Play,
-  RotateCcw,
-  Search,
-  Settings,
-  Sparkles,
-  Star,
-  Wand2,
-  ZoomIn,
-  ZoomOut,
-  Eraser,
-  FileText,
-  type LucideIcon,
-} from 'lucide-react';
+import { Archive, ArrowRight, Code, Columns2, Command as CommandIcon, Copy, CornerDownLeft, Eraser, FileText, FolderPlus, Globe, History, Layers, PanelLeft, Pause, Pin, Play, RotateCcw, Search, Settings, Sparkles, Star, Wand2, ZoomIn, ZoomOut, type LucideIcon } from 'lucide-react';
 import type { OverlayState, Suggestion, UIState } from '../../shared/types';
 import { cmd, query } from '../common/api';
 import { Favicon } from '../common/Favicon';
@@ -76,6 +49,8 @@ export const COMMANDS: CommandDef[] = [
     },
   },
   { id: 'unsplit', label: 'Close split view', icon: Columns2, when: (s) => !!s.split, run: () => cmd({ type: 'ui.split', tabIds: null }) },
+  { id: 'history', label: 'Show history', icon: History, keywords: 'visited browsing', hint: '⌘Y', run: () => cmd({ type: 'ui.history' }) },
+  { id: 'reopen', label: 'Reopen closed tab', icon: RotateCcw, keywords: 'undo close restore', hint: '⇧⌘T', run: () => cmd({ type: 'tab.reopenClosed' }) },
   { id: 'new-space', label: 'New space…', icon: Layers, keywords: 'workspace profile', run: () => cmd({ type: 'ui.overlay', overlay: { kind: 'space' } }) },
   { id: 'new-folder', label: 'New folder', icon: FolderPlus, run: (s) => cmd({ type: 'folder.create', spaceId: s.activeSpaceId, pinned: true }) },
   {

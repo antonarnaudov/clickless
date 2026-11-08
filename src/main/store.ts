@@ -25,10 +25,19 @@ export interface PersistedState {
   archived: ArchivedTab[];
   settings: Settings;
   sitePermissions: Record<string, Record<string, 'allow' | 'deny'>>;
+  /** Recently closed tabs, newest last, for ⇧⌘T and History → Recently Closed. */
+  closed?: ClosedTab[];
+}
+
+export interface ClosedTab extends PersistedTab {
+  closedAt: number;
+  /** The tab's own back/forward list, restored on reopen. */
+  nav?: { entries: { url: string; title: string }[]; index: number };
 }
 
 export const dataDir = () => app.getPath('userData');
-export const discoveryDir = () => path.join(os.homedir(), '.clickless');
+/** ~/.clickless, or CLICKLESS_HOME (lets a test copy run next to the real one). */
+export const discoveryDir = () => (process.env.CLICKLESS_HOME ? path.resolve(process.env.CLICKLESS_HOME) : path.join(os.homedir(), '.clickless'));
 export const discoveryFile = () => path.join(discoveryDir(), 'control.json');
 
 function readJSON<T>(file: string): T | null {
@@ -94,6 +103,7 @@ export function loadState(): PersistedState {
     archived: saved.archived ?? [],
     folders: saved.folders ?? [],
     sitePermissions: saved.sitePermissions ?? {},
+    closed: Array.isArray(saved.closed) ? saved.closed.slice(-30) : [],
   };
 }
 
@@ -154,6 +164,19 @@ export class History {
     if (patch.title) e.title = patch.title;
     if (patch.favicon) e.favicon = patch.favicon;
     this.saveSoon();
+  }
+
+  /** Forgets these addresses. */
+  remove(urls: string[]) {
+    for (const u of urls) this.map.delete(u);
+    this.saveSoon();
+  }
+
+  /** Forgets everything visited since `since` (ms), or everything. */
+  clear(since?: number) {
+    if (!since) this.map.clear();
+    else for (const [u, e] of this.map) if (e.lastVisitAt >= since) this.map.delete(u);
+    this.flush();
   }
 
   all(): HistoryEntry[] {

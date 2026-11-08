@@ -251,7 +251,7 @@ export interface UIState {
   /** The tab shown in the main viewport (may be a favorite from any space). */
   activeTabId: TabId | null;
   /** Two tabs side by side. The first is the active one. */
-  split: { tabIds: [TabId, TabId]; ratio: number } | null;
+  split: { tabIds: TabId[]; sizes: number[] } | null;
   sidebar: { visible: boolean; width: number };
   panel: { open: boolean; width: number };
   overlay: OverlayState | null;

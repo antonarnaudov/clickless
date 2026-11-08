@@ -123,7 +123,7 @@ function installMock() {
       { id: 'fo2', spaceId: 's1', name: 'Competitors', collapsed: false, pinned: false, order: 4 },
     ],
     activeTabId: surface === 'internal' ? 't7' : 't1',
-    split: params.get('split') === '1' ? { tabIds: ['t1', 't2'], ratio: 0.5 } : null,
+    split: params.get('split') === '1' ? { tabIds: ['t1', 't2'], sizes: [0.5, 0.5] } : null,
     sidebar: { visible: params.get('sidebar') !== '0', width: 248 },
     panel: { open: params.get('panel') !== '0', width: 360 },
     overlay: overlayFor(overlayParam),
@@ -429,7 +429,19 @@ function installMock() {
         set({ overlay: c.overlay });
         return;
       case 'ui.split':
-        set({ split: c.tabIds ? { tabIds: c.tabIds, ratio: c.ratio ?? state.split?.ratio ?? 0.5 } : null });
+        set({ split: c.tabIds ? { tabIds: c.tabIds, sizes: c.sizes ?? c.tabIds.map(() => 1 / c.tabIds!.length) } : c.sizes && state.split ? { ...state.split, sizes: c.sizes } : null });
+        return;
+      case 'split.insert': {
+        const ids = (state.split?.tabIds ?? [state.activeTabId!]).filter((t) => t !== c.tabId);
+        ids.splice(c.index, 0, c.tabId);
+        set({ split: { tabIds: ids, sizes: ids.map(() => 1 / ids.length) }, activeTabId: c.tabId });
+        return;
+      }
+      case 'split.remove': {
+        const ids = (state.split?.tabIds ?? []).filter((t) => t !== c.tabId);
+        set({ split: ids.length > 1 ? { tabIds: ids, sizes: ids.map(() => 1 / ids.length) } : null });
+        return;
+      }
         return;
       case 'ui.find':
         if (c.close) set({ find: null });
@@ -532,6 +544,7 @@ function installMock() {
       { url: 'https://ollama.com/library', title: 'Ollama library', visitCount: 4, lastVisitAt: now - 2 * 86400_000 },
       { url: 'https://www.figma.com/', title: 'Figma', visitCount: 20, lastVisitAt: now - 3 * 86400_000 },
     ],
+    recentlyClosed: () => [{ id: 'c1', url: 'https://example.com/closed', title: 'A tab you closed', closedAt: now - 120_000 }],
     importSources: () => [
       { id: 'arc', name: 'Arc', available: true },
       { id: 'comet', name: 'Comet', available: true },
@@ -547,6 +560,7 @@ function installMock() {
       mcpJson: '{\n  "mcpServers": {\n    "clickless": { "command": "clickless", "args": ["mcp"] }\n  }\n}',
       curlExample: 'curl -s http://127.0.0.1:7734/v1/tools/observe -H "Authorization: Bearer clickless_demo…" -d "{}"',
       cliExample: 'clickless act \'click "Sign in"; type "Email" "me@x.com" enter\'',
+      stdio: { command: '/Applications/Clickless.app/Contents/MacOS/Clickless', args: ['/Applications/Clickless.app/Contents/Resources/app.asar.unpacked/dist/cli/clickless.js', 'mcp'], env: { ELECTRON_RUN_AS_NODE: '1' } },
     }),
   };
 

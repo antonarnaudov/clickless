@@ -19,6 +19,9 @@ export interface ControlServerDeps {
   /** Dev only (CLICKLESS_DEBUG=1): PNG captures of the UI layers. */
   debugCapture?(): Promise<Record<string, string>>;
   debugCommand?(c: unknown): Promise<unknown>;
+  debugShellMouse?(steps: unknown): Promise<unknown>;
+  debugShellEval?(code: string): Promise<unknown>;
+  debugMenu?(accelerator: string): unknown;
   /** Import tabs from another browser on this Mac (GET lists sources, POST {source} imports). */
   importSources?(): unknown;
   importFrom?(source: string): unknown;
@@ -192,6 +195,9 @@ export class ControlServer {
         return send(res, 422, { error: (err as Error).message });
       }
     }
+    if (url.pathname === '/v1/debug/menu' && process.env.CLICKLESS_DEBUG && this.deps.debugMenu) return send(res, 200, this.deps.debugMenu(String(((await readBody(req)) as any)?.accelerator ?? '')));
+    if (url.pathname === '/v1/debug/shell-eval' && process.env.CLICKLESS_DEBUG && this.deps.debugShellEval) return send(res, 200, { result: (await this.deps.debugShellEval(String(((await readBody(req)) as any)?.code ?? ''))) ?? null });
+    if (url.pathname === '/v1/debug/mouse' && process.env.CLICKLESS_DEBUG && this.deps.debugShellMouse) return send(res, 200, await this.deps.debugShellMouse(await readBody(req)));
     if (url.pathname === '/v1/tabs' && req.method === 'GET') return send(res, 200, this.deps.browser.listTabs({ all: url.searchParams.get('all') === '1' }));
 
     const toolMatch = /^\/v1\/(?:tools\/)?([a-z_]+)$/.exec(url.pathname);

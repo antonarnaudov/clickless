@@ -122,6 +122,15 @@ export function buildMenu(b: Clickless, run: (c: Command) => Promise<unknown>) {
       submenu: [
         { label: 'Back', accelerator: 'CmdOrCtrl+[', click: cmd({ type: 'tab.back' }) },
         { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: cmd({ type: 'tab.forward' }) },
+        { label: 'Back', accelerator: 'CmdOrCtrl+Left', visible: false, click: cmd({ type: 'tab.back' }) },
+        { label: 'Forward', accelerator: 'CmdOrCtrl+Right', visible: false, click: cmd({ type: 'tab.forward' }) },
+        { type: 'separator' },
+        { label: 'Show All History', accelerator: isMac ? 'Cmd+Y' : 'Ctrl+H', click: cmd({ type: 'ui.history' }) },
+        {
+          label: 'Recently Closed',
+          enabled: b.recentlyClosed().length > 0,
+          submenu: b.recentlyClosed().slice(0, 12).map((c) => ({ label: (c.title || c.url).slice(0, 60), click: cmd({ type: 'tab.reopenClosed', closedId: c.id }) })),
+        },
       ],
     },
     {

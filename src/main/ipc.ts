@@ -112,7 +112,15 @@ export function registerIpc(app: IpcApp) {
       case 'tab.duplicate':
         return b.duplicateTab(c.tabId);
       case 'tab.reopenClosed':
-        return b.reopenClosed();
+        return b.reopenClosed(c.closedId);
+      case 'ui.history':
+        return b.openHistory();
+      case 'history.delete':
+        b.history.remove(c.urls ?? []);
+        return;
+      case 'history.clear':
+        b.history.clear(c.since);
+        return;
       case 'tab.restoreArchived':
         return b.restoreArchived(c.archivedId);
       case 'tabs.clearToday':
@@ -176,7 +184,15 @@ export function registerIpc(app: IpcApp) {
       case 'ui.overlay':
         return b.setOverlay(c.overlay);
       case 'ui.split':
-        return b.setSplit(c.tabIds, c.ratio);
+        return b.setSplit(c.tabIds, c.sizes, c.ratio);
+      case 'split.insert':
+        return b.splitInsert(c.tabId, c.index);
+      case 'split.replace':
+        return b.splitReplace(c.index, c.tabId);
+      case 'split.remove':
+        return b.splitRemove(c.tabId);
+      case 'ui.dragLift':
+        return b.dragLift(c.on);
       case 'ui.find':
         return b.find(c);
       case 'ui.zoom':
@@ -314,7 +330,7 @@ export function registerIpc(app: IpcApp) {
         return b.state.archived.filter((x) => !q || x.title.toLowerCase().includes(q) || x.url.toLowerCase().includes(q)).slice(0, a.limit ?? 50) as any;
       }
       case 'history':
-        return b.history.search(a.query ?? '', a.limit ?? 20) as any;
+        return b.history.search(a.query ?? '', Math.min(5000, a.limit ?? 20)) as any;
       case 'providerTest':
         return (await b.ai.testProvider(a.providerId)) as any;
       case 'providerModels':
@@ -329,6 +345,8 @@ export function registerIpc(app: IpcApp) {
         return b.uiState() as any;
       case 'importSources':
         return listSources() as any;
+      case 'recentlyClosed':
+        return b.recentlyClosed() as any;
     }
     throw new Error(`unknown query ${String(name)}`);
   }

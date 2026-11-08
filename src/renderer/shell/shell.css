@@ -773,10 +773,102 @@
   min-height: 0;
   display: flex;
 }
+.pane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.viewport:not(.split) > .pane {
+  gap: 0;
+}
+.pane.lifting {
+  opacity: 0.45;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 2px;
+  border-radius: 9px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  transition: background 140ms, color 140ms;
+}
+.pane-head.on {
+  background: var(--glaze);
+  color: var(--ink);
+}
+.pane-head .title {
+  flex: 1;
+  min-width: 0;
+}
+.pane-head .grip {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ink-4, var(--ink-3));
+  cursor: grab;
+}
+.pane-head .grip:hover {
+  background: var(--glaze);
+  color: var(--ink);
+}
+.viewport.dragging .pane-head .grip {
+  cursor: grabbing;
+}
+.pane-head .icon-btn.sm {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.pane-head:hover .icon-btn.sm,
+.pane-head.on .icon-btn.sm {
+  opacity: 1;
+}
+.card-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  border-radius: inherit;
+  filter: saturate(0.85) brightness(0.92);
+}
+.drop-zone {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--accent) 70%, transparent);
+  pointer-events: none;
+  transition: left 120ms var(--ease-out), top 120ms var(--ease-out), width 120ms var(--ease-out), height 120ms var(--ease-out);
+}
+.drop-zone span {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink, var(--surface));
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.drop-zone span:empty {
+  display: none;
+}
 .card {
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow-card);
@@ -1448,4 +1540,14 @@ button.chip:hover {
   width: max-content;
   max-width: 60%;
   transform: translateX(-50%);
+}
+
+.row .split-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  color: var(--ink-3);
+}
+.row:hover .split-mark {
+  display: none;
 }

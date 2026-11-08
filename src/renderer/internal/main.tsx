@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { useUIState } from '../common/api';
 import { useTheme } from '../common/theme';
 import { Ask } from './Ask';
+import { HistoryPage } from './History';
 import { NewTab } from './NewTab';
 
 /** clickless://newtab, clickless://ask?id=… — or /internal.html?page=ask&id=… in the dev server. */
@@ -20,6 +21,7 @@ function App() {
   useTheme(state);
   const r = route();
   if (r.page === 'ask') return <Ask askId={r.id} />;
+  if (r.page === 'history') return <HistoryPage />;
   return <NewTab state={state} />;
 }
 

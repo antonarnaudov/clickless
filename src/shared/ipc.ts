@@ -40,7 +40,13 @@ export type Command =
    */
   | { type: 'tab.move'; tabId: TabId; spaceId?: string; pinned?: boolean; favorite?: boolean; folderId?: string | null; beforeId?: string | null }
   | { type: 'tab.duplicate'; tabId: TabId }
-  | { type: 'tab.reopenClosed' }
+  /** Reopens the last closed tab, or a specific one from recentlyClosed. */
+  | { type: 'tab.reopenClosed'; closedId?: string }
+  /** Opens the History page. */
+  | { type: 'ui.history' }
+  | { type: 'history.delete'; urls: string[] }
+  /** Clears history visited since `since` (ms since epoch), or all of it. */
+  | { type: 'history.clear'; since?: number }
   | { type: 'tab.restoreArchived'; archivedId: string }
   /** Arc's "Clear": archives every unpinned tab of the space. */
   | { type: 'tabs.clearToday'; spaceId?: string }
@@ -68,7 +74,16 @@ export type Command =
   | { type: 'ui.panel'; open?: boolean; width?: number }
   /** Open / switch / close (null) the overlay layer: command palette, settings, organizer, space editor. */
   | { type: 'ui.overlay'; overlay: OverlayState | null }
-  | { type: 'ui.split'; tabIds: [TabId, TabId] | null; ratio?: number }
+  /** Sets the split panes (2–4 tabs, left to right) or clears it with null. With tabIds null, `sizes`/`ratio` resize the current split. */
+  | { type: 'ui.split'; tabIds: TabId[] | null; sizes?: number[]; ratio?: number }
+  /** Adds a tab to the split at a position (starts one with the active tab), or moves it there. */
+  | { type: 'split.insert'; tabId: TabId; index: number }
+  /** Puts a tab into pane `index` (swaps if it's already in another pane). */
+  | { type: 'split.replace'; tabId: TabId; index: number }
+  /** Takes a tab out of the split; the tab stays open. */
+  | { type: 'split.remove'; tabId: TabId }
+  /** Lifts the page views off while something is dragged over them (the shell gets snapshots in a 'lift' event). */
+  | { type: 'ui.dragLift'; on: boolean }
   | { type: 'ui.find'; query?: string; next?: boolean; back?: boolean; close?: boolean }
   | { type: 'ui.zoom'; tabId?: TabId; delta: 1 | -1 | 0 }
   | { type: 'ui.devtools'; tabId?: TabId }
@@ -134,6 +149,8 @@ export interface QueryMap {
       mcpJson: string;
       curlExample: string;
       cliExample: string;
+      /** How to start the stdio MCP bridge (no token needed: it reads the discovery file). */
+      stdio: { command: string; args: string[]; env?: Record<string, string> };
     };
   };
   askState: { args: { askId: string }; result: AskState | null };
@@ -141,6 +158,7 @@ export interface QueryMap {
   state: { args: Record<string, never>; result: UIState };
   /** Browsers Clickless can import from, and whether their data is on this Mac. */
   importSources: { args: Record<string, never>; result: ImportSource[] };
+  recentlyClosed: { args: Record<string, never>; result: { id: string; url: string; title: string; favicon?: string; closedAt: number }[] };
 }
 
 export type QueryName = keyof QueryMap;
@@ -150,7 +168,9 @@ export type ShellEvent =
   | { type: 'focus-sidebar-url' }
   | { type: 'find-open' }
   | { type: 'panel-focus' }
-  | { type: 'toast'; text: string; tone?: 'info' | 'success' | 'error' };
+  | { type: 'toast'; text: string; tone?: 'info' | 'success' | 'error' }
+  /** Snapshots of the visible pages while they're lifted for a drag (null when they're back). */
+  | { type: 'lift'; shots: Record<string, string> | null };
 
 /** `window.clickless` in the shell, the overlay and clickless:// internal pages. */
 export interface ClicklessAPI {
@@ -192,5 +212,8 @@ export const INTERNAL_PAGE_COMMANDS: CommandType[] = [
   'agent.send',
   'ui.panel',
   'app.openExternal',
+  'tab.reopenClosed',
+  'history.delete',
+  'history.clear',
 ];
-export const INTERNAL_PAGE_QUERIES: QueryName[] = ['suggest', 'askState', 'history', 'state'];
+export const INTERNAL_PAGE_QUERIES: QueryName[] = ['suggest', 'askState', 'history', 'state', 'recentlyClosed'];

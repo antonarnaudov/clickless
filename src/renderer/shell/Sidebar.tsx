@@ -10,49 +10,16 @@ import {
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
+  type DragMoveEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { AnimatePresence, motion } from 'motion/react';
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  Columns2,
-  Copy,
-  CopyPlus,
-  Download,
-  Ellipsis,
-  Folder as FolderIcon,
-  FolderInput,
-  FolderOpen,
-  FolderPlus,
-  Globe,
-  Layers,
-  Lock,
-  Pause,
-  Pencil,
-  Pin,
-  PinOff,
-  Play,
-  Plug,
-  Plus,
-  RotateCw,
-  Settings as SettingsIcon,
-  Sparkles,
-  Square,
-  Star,
-  StarOff,
-  Trash2,
-  Volume2,
-  VolumeX,
-  Wand2,
-  X,
-  PanelLeft,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Columns2, Copy, CopyPlus, Download, Ellipsis, Folder as FolderIcon, FolderInput, FolderOpen, FolderPlus, Globe, Layers, Lock, PanelLeft, Pause, Pencil, Pin, PinOff, Play, Plug, Plus, RotateCw, Settings as SettingsIcon, Sparkles, Square, SquareArrowOutUpRight, Star, StarOff, Trash2, Volume2, VolumeX, Wand2, X } from 'lucide-react';
 import type { Download as DownloadT, Folder, Space, Tab, UIState } from '../../shared/types';
 import { cmd } from '../common/api';
+import { splitDrag } from './dnd';
 import { Favicon } from '../common/Favicon';
 import { buildSidebar, cx, displayUrl, formatBytes, hostOf, isSecure, type SidebarModel } from '../common/util';
 import { useContextMenu, type MenuItem } from './ContextMenu';
@@ -69,6 +36,8 @@ interface SbCtx {
   onRowClick(tabId: string, e: React.MouseEvent): void;
   getSelection(): Set<string>;
   clearSelection(): void;
+  /** Tabs that are panes of the split view (shown with a small split mark). */
+  splitIds: string;
 }
 const Ctx = createContext<SbCtx>(null!);
 
@@ -142,7 +111,24 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
     [base],
   );
 
-  const onDragStart = (e: DragStartEvent) => setDrag({ id: String(e.active.id), layout: base, into: null });
+  const pointerOf = (e: { activatorEvent: Event; delta: { x: number; y: number } }) => {
+    const a = e.activatorEvent as PointerEvent;
+    return { x: (a.clientX ?? 0) + e.delta.x, y: (a.clientY ?? 0) + e.delta.y };
+  };
+  const onDragStart = (e: DragStartEvent) => {
+    setDrag({ id: String(e.active.id), layout: base, into: null });
+    const id = String(e.active.id);
+    if (id.startsWith('tab:')) {
+      const p = pointerOf({ activatorEvent: e.activatorEvent, delta: { x: 0, y: 0 } });
+      splitDrag.start({ kind: 'tab', tabId: idOf(id) }, p.x, p.y);
+    }
+  };
+  // Over the page area the Viewport shows split drop zones (see dnd.ts).
+  const onDragMove = (e: DragMoveEvent) => {
+    if (!splitDrag.get()) return;
+    const p = pointerOf(e);
+    splitDrag.move(p.x, p.y);
+  };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
     const d = dragRef.current;
@@ -174,6 +160,8 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     const d = dragRef.current;
     setDrag(null);
+    const splitAction = splitDrag.end();
+    if (splitAction) return void cmd(splitAction);
     if (!d || !over) return;
     const a = String(active.id);
     const o = String(over.id);
@@ -250,7 +238,8 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
   }, []);
   const getSelection = useCallback(() => selRef.current, []);
   const clearSelection = useCallback(() => setSelected(new Set()), []);
-  const ctx = useMemo(() => ({ renamingId, setRenaming, getState, onRowClick, getSelection, clearSelection }), [renamingId, getState, onRowClick, getSelection, clearSelection]);
+  const splitIds = state.split?.tabIds.join(',') ?? '';
+  const ctx = useMemo(() => ({ renamingId, setRenaming, getState, onRowClick, getSelection, clearSelection, splitIds }), [renamingId, getState, onRowClick, getSelection, clearSelection, splitIds]);
   const agentTab = state.agent.active ? state.agent.tabId : null;
   const dragTab = drag && drag.id.startsWith('tab:') ? tabsById.get(idOf(drag.id)) : undefined;
   const dragFolder = drag && drag.id.startsWith('folder:') ? foldersById.get(idOf(drag.id)) : undefined;
@@ -266,7 +255,7 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
 
   return (
     <Ctx.Provider value={ctx}>
-      <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => setDrag(null)}>
+      <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => (setDrag(null), splitDrag.end())}>
         <div
           className="sidebar-inner"
           style={{ width: width - 12 }}
@@ -559,7 +548,7 @@ function useTabMenu(tab: Tab) {
         { label: `New folder with ${n} tabs`, icon: FolderPlus, onSelect: after(() => cmd({ type: 'folder.create', spaceId: state.activeSpaceId, pinned: tab.pinned, tabIds: ids })) },
         { label: `Pin ${n} tabs`, icon: Pin, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.update', tabId: id, patch: { pinned: true } }))) },
         { label: `Unpin ${n} tabs`, icon: PinOff, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.update', tabId: id, patch: { pinned: false } }))) },
-        n === 2 ? { label: 'Open side by side', icon: Columns2, onSelect: after(() => cmd({ type: 'ui.split', tabIds: [ids[0], ids[1]] })) } : { sep: true },
+        n >= 2 && n <= 4 ? { label: `Open ${n} side by side`, icon: Columns2, onSelect: after(() => cmd({ type: 'ui.split', tabIds: ids })) } : { sep: true },
         {
           label: `Move ${n} tabs to space`,
           icon: Layers,
@@ -586,9 +575,11 @@ function useTabMenu(tab: Tab) {
       { label: 'Rename…', icon: Pencil, onSelect: () => setRenaming(tab.id) },
       { label: 'Duplicate', icon: CopyPlus, onSelect: () => cmd({ type: 'tab.duplicate', tabId: tab.id }) },
       { label: 'Copy link', icon: Copy, onSelect: () => cmd({ type: 'ui.copyUrl', tabId: tab.id }) },
-      activeId && activeId !== tab.id
-        ? { label: 'Open in split view', icon: Columns2, onSelect: () => cmd({ type: 'ui.split', tabIds: [activeId, tab.id] }) }
-        : false,
+      state.split?.tabIds.includes(tab.id)
+        ? { label: 'Take out of split', icon: SquareArrowOutUpRight, onSelect: () => cmd({ type: 'split.remove', tabId: tab.id }) }
+        : activeId && activeId !== tab.id && (state.split?.tabIds.length ?? 0) < 4
+          ? { label: state.split?.tabIds.includes(activeId) ? 'Add to split view' : 'Open in split view', icon: Columns2, onSelect: () => cmd({ type: 'split.insert', tabId: tab.id, index: state.split?.tabIds.includes(activeId) ? state.split.tabIds.length : 1 }) }
+          : false,
       tab.audible || tab.muted
         ? { label: tab.muted ? 'Unmute' : 'Mute', icon: tab.muted ? Volume2 : VolumeX, onSelect: () => cmd({ type: 'tab.update', tabId: tab.id, patch: { muted: !tab.muted } }) }
         : false,
@@ -616,7 +607,8 @@ function useTabMenu(tab: Tab) {
 
 const TabRow = memo(function TabRow({ tab, active, agentHere, selected }: { tab: Tab; active: boolean; agentHere: boolean; selected: boolean }) {
   const s = useSortable({ id: `tab:${tab.id}` });
-  const { renamingId, setRenaming, onRowClick } = useContext(Ctx);
+  const { renamingId, setRenaming, onRowClick, splitIds } = useContext(Ctx);
+  const inSplit = !!splitIds && splitIds.split(',').includes(tab.id);
   const menu = useTabMenu(tab);
   const renaming = renamingId === tab.id;
   return (
@@ -647,6 +639,11 @@ const TabRow = memo(function TabRow({ tab, active, agentHere, selected }: { tab:
         <span className="title truncate">{tab.title || hostOf(tab.url) || 'New Tab'}</span>
       )}
       <span className="end">
+        {inSplit && (
+          <span className="split-mark" title="In split view">
+            <Columns2 size={12} />
+          </span>
+        )}
         {(tab.audible || tab.muted) && (
           <button
             className="icon-btn sm audio"

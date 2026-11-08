@@ -41,7 +41,7 @@ import { PageController } from './page';
 import type { BackupService } from './backup-service';
 import { countPlan, readSource, type ImportNode, type ImportPlan, type ImportReport } from './importers';
 import { Headless } from './headless';
-import { History, Secrets, flushState, saveStateSoon, type PersistedState, type PersistedTab } from './store';
+import { History, Secrets, flushState, saveStateSoon, type ClosedTab, type PersistedState, type PersistedTab } from './store';
 
 export const PARTITION = 'persist:clickless';
 const NEWTAB = `${APP_SCHEME}://newtab`;
@@ -90,11 +90,22 @@ export class Clickless implements Browser {
   private banners: Banner[] = [];
   private bannerWaiters = new Map<string, (value: string) => void>();
   private downloads: Download[] = [];
-  private closed: PersistedTab[] = [];
+  private get closed(): ClosedTab[] {
+    return (this.state.closed ??= []);
+  }
+  private set closed(v: ClosedTab[]) {
+    this.state.closed = v;
+  }
+  /** Back/forward lists to restore when a reopened tab wakes up. */
+  private pendingNav = new Map<TabId, NonNullable<ClosedTab['nav']>>();
+  /** Set by index.ts: rebuilds the app menu (Recently Closed changes). */
+  onMenuChange?: () => void;
   private openedLog: { opener: TabId; tab: TabId; at: number }[] = [];
   private openerOf = new Map<TabId, TabId>();
   private fullscreen = false;
   private htmlFullscreen: TabId | null = null;
+  /** While a tab or pane is dragged over the pages, the native views are lifted off so the shell can draw drop zones over snapshots. */
+  private lifted = false;
   private activityCount = 0;
   private activityEnd: ReturnType<typeof setTimeout> | null = null;
   private activityFields: Omit<AgentActivity, 'clients'> = { active: false, source: null, tabId: null, label: null, paused: false };
@@ -355,6 +366,13 @@ export class Clickless implements Browser {
       nav();
       this.pushState();
     });
+    wc.on('focus', () => {
+      const sp = this.split();
+      if (sp?.tabIds.includes(id) && this.activeTabId() !== id && sp.tabIds.includes(this.activeTabId() ?? '')) {
+        this.state.activeTabBySpace[this.state.activeSpaceId] = id;
+        this.pushState();
+      }
+    });
     wc.on('page-title-updated', (_e, title) => {
       const t = tab();
       if (!t) return;
@@ -448,6 +466,7 @@ export class Clickless implements Browser {
 
   private internalTitle(url: string): string {
     if (url.startsWith(`${APP_SCHEME}://ask`)) return 'Ask';
+    if (url.startsWith(`${APP_SCHEME}://history`)) return 'History';
     if (url.startsWith(`${APP_SCHEME}://error`)) return 'Page not available';
     return 'New Tab';
   }
@@ -517,8 +536,8 @@ export class Clickless implements Browser {
     const active = this.activeTabId();
     if (!active) return [];
     if (this.htmlFullscreen) return [this.htmlFullscreen];
-    const split = (this.state as any).split as { tabIds: [TabId, TabId]; ratio: number } | null;
-    if (split && split.tabIds.includes(active) && split.tabIds.every((t) => this.tabs.has(t))) return split.tabIds;
+    const split = this.split();
+    if (split && split.tabIds.includes(active)) return split.tabIds;
     return [active];
   }
 
@@ -534,7 +553,7 @@ export class Clickless implements Browser {
       height: height - 16,
     };
     for (const [id, view] of this.views) {
-      if (!visible.includes(id)) {
+      if (!visible.includes(id) || this.lifted) {
         if ((view as any).__attached) {
           this.win.contentView.removeChildView(view);
           (view as any).__attached = false;
@@ -543,7 +562,7 @@ export class Clickless implements Browser {
     }
     visible.forEach((id, i) => {
       const view = this.views.get(id);
-      if (!view) return;
+      if (!view || this.lifted) return;
       let r = this.htmlFullscreen ? { x: 0, y: 0, width, height } : (this.viewports[i] ?? (i === 0 ? fallback : null));
       if (!r) return;
       r = { x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) };
@@ -601,14 +620,14 @@ export class Clickless implements Browser {
       const l = this.live.get(t.id);
       return l ? { ...t, loading: l.loading, canGoBack: l.canGoBack, canGoForward: l.canGoForward, audible: l.audible, error: l.error } : { ...t };
     });
-    const split = (this.state as any).split ?? null;
+    const split = this.split();
     return {
       spaces: this.state.spaces,
       activeSpaceId: this.state.activeSpaceId,
       tabs,
       folders: this.state.folders,
       activeTabId: this.activeTabId(),
-      split: split && split.tabIds.every((t: TabId) => this.tabs.has(t)) ? split : null,
+      split,
       sidebar: this.state.sidebar,
       panel: this.state.panel,
       overlay: this.overlayState,
@@ -945,7 +964,10 @@ export class Clickless implements Browser {
     let view = this.views.get(id);
     if (view && !view.webContents.isDestroyed()) return view;
     view = this.createView(t);
-    view.webContents.loadURL(t.url).catch(() => {});
+    const nav = this.pendingNav.get(id);
+    this.pendingNav.delete(id);
+    if (nav) view.webContents.navigationHistory.restore({ entries: nav.entries, index: nav.index }).catch(() => view!.webContents.loadURL(t.url).catch(() => {}));
+    else view.webContents.loadURL(t.url).catch(() => {});
     return view;
   }
 
@@ -953,8 +975,6 @@ export class Clickless implements Browser {
     const t = this.tabs.get(id);
     if (!t) return;
     if (!t.favorite && t.spaceId !== this.state.activeSpaceId) this.state.activeSpaceId = t.spaceId;
-    const split = (this.state as any).split as { tabIds: [TabId, TabId] } | null;
-    if (split && !split.tabIds.includes(id)) (this.state as any).split = null;
     this.state.activeTabBySpace[this.state.activeSpaceId] = id;
     t.lastActiveAt = Date.now();
     const view = this.wake(id);
@@ -989,8 +1009,22 @@ export class Clickless implements Browser {
     this.tabs.delete(id);
     const rec = this.persistedState().tabs.find((x) => x.id === id) ?? ({ ...t } as PersistedTab);
     if (!t.internal) {
-      this.closed.push({ ...rec, ...t });
+      const wc = this.views.get(id)?.webContents;
+      let nav: ClosedTab['nav'];
+      try {
+        if (wc && !wc.isDestroyed()) {
+          const entries = wc.navigationHistory.getAllEntries().map((e) => ({ url: e.url, title: e.title }));
+          const index = wc.navigationHistory.getActiveIndex();
+          const from = Math.max(0, Math.min(index - 24, entries.length - 50));
+          if (entries.length > 1) nav = { entries: entries.slice(from, from + 50), index: index - from };
+        }
+      } catch {
+        /* no history to keep */
+      }
+      const p = rec as PersistedTab;
+      this.closed.push({ id: p.id, spaceId: t.spaceId, url: t.url, title: t.title, favicon: t.favicon, favorite: t.favorite, pinned: t.pinned, folderId: t.folderId, order: t.order, createdAt: t.createdAt, lastActiveAt: t.lastActiveAt, zoom: t.zoom, muted: t.muted, closedAt: Date.now(), nav });
       this.closed = this.closed.slice(-30);
+      this.onMenuChange?.();
       if (opts.archive) {
         this.state.archived.unshift({ id: uid('a'), url: t.url, title: t.title, favicon: t.favicon, spaceId: t.spaceId, archivedAt: Date.now() });
         this.state.archived = this.state.archived.slice(0, 500);
@@ -998,8 +1032,19 @@ export class Clickless implements Browser {
     }
     this.sleepTab(id);
     this.live.delete(id);
-    const split = (this.state as any).split as { tabIds: TabId[] } | null;
-    if (split?.tabIds.includes(id)) (this.state as any).split = null;
+    const raw = (this.state as any).split as { tabIds?: TabId[]; sizes?: number[] } | null;
+    if (raw?.tabIds?.includes(id)) {
+      const i = raw.tabIds.indexOf(id);
+      this.writeSplit(raw.tabIds.filter((t) => t !== id), raw.sizes?.length === raw.tabIds.length ? raw.sizes.filter((_, k) => k !== i) : undefined);
+      const rest = this.split();
+      if (wasActive && rest) {
+        this.state.activeTabBySpace[this.state.activeSpaceId] = rest.tabIds[0];
+        this.openerOf.delete(id);
+        this.layout();
+        this.save();
+        return this.pushState();
+      }
+    }
     for (const [space, tid] of Object.entries(this.state.activeTabBySpace)) if (tid === id && space !== this.state.activeSpaceId) delete this.state.activeTabBySpace[space];
     if (wasActive) this.pickNextActive(id);
     this.openerOf.delete(id);
@@ -1020,13 +1065,35 @@ export class Clickless implements Browser {
     }
   }
 
-  reopenClosed() {
-    const rec = this.closed.pop();
-    if (!rec) return;
-    const t = this.newTabRecord(rec.url, { spaceId: rec.spaceId, pinned: rec.pinned, folderId: rec.folderId });
+  /** Brings back the last closed tab (or a given one): same space, folder and place, with its back/forward history. */
+  reopenClosed(closedId?: string) {
+    const i = closedId ? this.closed.findIndex((c) => c.id === closedId) : this.closed.length - 1;
+    if (i < 0) return;
+    const [rec] = this.closed.splice(i, 1);
+    this.onMenuChange?.();
+    const spaceId = this.state.spaces.some((s) => s.id === rec.spaceId) ? rec.spaceId : this.state.activeSpaceId;
+    const folderId = rec.folderId && this.state.folders.some((f) => f.id === rec.folderId) ? rec.folderId : undefined;
+    const t = this.newTabRecord(rec.url, { spaceId, pinned: rec.pinned, folderId });
     t.title = rec.title;
     t.favicon = rec.favicon;
+    t.favorite = !!rec.favorite;
+    if (rec.favorite) t.pinned = false;
+    t.order = rec.order;
+    t.zoom = rec.zoom ?? 0;
+    if (rec.nav?.entries.length) this.pendingNav.set(t.id, rec.nav);
     this.activateTab(t.id);
+  }
+
+  recentlyClosed() {
+    return [...this.closed].reverse().map((c) => ({ id: c.id, url: c.url, title: c.title, favicon: c.favicon, closedAt: c.closedAt }));
+  }
+
+  /** Opens History in a tab (reusing one that's already open). */
+  openHistory() {
+    const url = `${APP_SCHEME}://history`;
+    const existing = Array.from(this.tabs.values()).find((t) => t.url.startsWith(url) && (t.spaceId === this.state.activeSpaceId || t.favorite));
+    if (existing) return this.activateTab(existing.id);
+    return this.openTab(url, { spaceId: this.state.activeSpaceId });
   }
 
   restoreArchived(archivedId: string) {
@@ -1088,17 +1155,112 @@ export class Clickless implements Browser {
     this.pushState();
   }
 
-  setSplit(tabIds: [TabId, TabId] | null, ratio?: number) {
-    if (tabIds && tabIds.every((t) => this.tabs.has(t)) && tabIds[0] !== tabIds[1]) {
-      (this.state as any).split = { tabIds, ratio: ratio ?? (this.state as any).split?.ratio ?? 0.5 };
-      for (const t of tabIds) this.wake(t);
-      this.state.activeTabBySpace[this.state.activeSpaceId] = tabIds[0];
-    } else if (!tabIds && ratio !== undefined && (this.state as any).split) {
-      (this.state as any).split.ratio = ratio;
-    } else (this.state as any).split = null;
+  // ----- split view: 2–4 panes side by side -----
+
+  static readonly MAX_PANES = 4;
+
+  /** The current split, cleaned up (closed tabs dropped, sizes normalized). `raw` skips the 2-pane minimum. */
+  split(raw = false): { tabIds: TabId[]; sizes: number[] } | null {
+    const s = (this.state as any).split as { tabIds?: TabId[]; sizes?: number[]; ratio?: number } | null;
+    if (!s?.tabIds) return null;
+    const keep = s.tabIds.map((id, i) => ({ id, size: s.sizes?.[i] ?? (s.tabIds!.length === 2 && s.ratio !== undefined ? (i === 0 ? s.ratio : 1 - s.ratio) : 1 / s.tabIds!.length) })).filter((x) => this.tabs.has(x.id));
+    if (!raw && keep.length < 2) return null;
+    const total = keep.reduce((n, x) => n + x.size, 0) || 1;
+    return { tabIds: keep.map((x) => x.id), sizes: keep.map((x) => x.size / total) };
+  }
+
+  private writeSplit(ids: TabId[] | null, sizes?: number[]) {
+    const list = (ids ?? []).filter((t, i, a) => this.tabs.has(t) && a.indexOf(t) === i).slice(0, Clickless.MAX_PANES);
+    if (list.length < 2) {
+      (this.state as any).split = null;
+      return;
+    }
+    const sz = sizes && sizes.length === list.length ? sizes.map((x) => Math.max(0.1, x)) : list.map(() => 1 / list.length);
+    const total = sz.reduce((n, x) => n + x, 0);
+    (this.state as any).split = { tabIds: list, sizes: sz.map((x) => x / total) };
+    for (const t of list) this.wake(t);
+  }
+
+  private afterSplit(focus?: TabId) {
+    const sp = this.split();
+    const active = this.activeTabId();
+    if (focus && this.tabs.has(focus)) this.state.activeTabBySpace[this.state.activeSpaceId] = focus;
+    else if (sp && (!active || !sp.tabIds.includes(active))) this.state.activeTabBySpace[this.state.activeSpaceId] = sp.tabIds[0];
     this.layout();
     this.save();
     this.pushState();
+  }
+
+  /** Sets the panes (or clears the split with null). `ratio` is the old two-pane form. */
+  setSplit(tabIds: TabId[] | null, sizes?: number[], ratio?: number) {
+    if (!tabIds && (sizes || ratio !== undefined)) {
+      const sp = this.split();
+      if (sp) this.writeSplit(sp.tabIds, sizes ?? (sp.tabIds.length === 2 && ratio !== undefined ? [ratio, 1 - ratio] : sp.sizes));
+      return this.afterSplit();
+    }
+    this.writeSplit(tabIds, sizes ?? (tabIds?.length === 2 && ratio !== undefined ? [ratio, 1 - ratio] : undefined));
+    this.afterSplit(tabIds?.[0]);
+  }
+
+  /** Puts a tab into the split at `index` (starting a split with the active tab if there is none). Moves it if it's already there. */
+  splitInsert(tabId: TabId, index: number) {
+    if (!this.tabs.has(tabId)) return;
+    const sp = this.split();
+    const active = this.activeTabId();
+    let ids = sp ? [...sp.tabIds] : active && active !== tabId ? [active] : [];
+    if (!ids.length) return;
+    ids = ids.filter((t) => t !== tabId);
+    if (ids.length >= Clickless.MAX_PANES) return this.event({ type: 'toast', text: `A split holds up to ${Clickless.MAX_PANES} tabs.`, tone: 'info' });
+    ids.splice(Math.max(0, Math.min(index, ids.length)), 0, tabId);
+    this.writeSplit(ids);
+    this.afterSplit(tabId);
+  }
+
+  /** Replaces the tab in pane `index` (swapping if the tab is already in another pane). */
+  splitReplace(index: number, tabId: TabId) {
+    const sp = this.split();
+    if (!sp || !this.tabs.has(tabId) || index < 0 || index >= sp.tabIds.length) return;
+    const ids = [...sp.tabIds];
+    const from = ids.indexOf(tabId);
+    if (from >= 0) [ids[from], ids[index]] = [ids[index], ids[from]];
+    else ids[index] = tabId;
+    this.writeSplit(ids, sp.sizes);
+    this.afterSplit(tabId);
+  }
+
+  /** Takes a tab out of the split without closing it. With one pane left the split ends. */
+  splitRemove(tabId: TabId) {
+    const sp = this.split();
+    if (!sp?.tabIds.includes(tabId)) return;
+    const rest = sp.tabIds.filter((t) => t !== tabId);
+    const sizes = sp.sizes.filter((_, i) => sp.tabIds[i] !== tabId);
+    this.writeSplit(rest, sizes);
+    this.afterSplit(this.activeTabId() === tabId ? rest[0] : undefined);
+  }
+
+  /** Lifts the native page views off while something is dragged over them; the shell shows snapshots meanwhile. */
+  async dragLift(on: boolean) {
+    if (on === this.lifted) return;
+    if (!on) {
+      this.lifted = false;
+      this.layout();
+      return this.event({ type: 'lift', shots: null });
+    }
+    const shots: Record<string, string> = {};
+    for (const id of this.visibleTabIds()) {
+      const v = this.views.get(id);
+      if (!v || v.webContents.isDestroyed()) continue;
+      try {
+        const img = await v.webContents.capturePage();
+        const { width } = img.getSize();
+        shots[id] = (width > 1400 ? img.resize({ width: Math.round(width / 2) }) : img).toDataURL();
+      } catch {
+        /* a blank card is fine */
+      }
+    }
+    this.lifted = true;
+    this.event({ type: 'lift', shots });
+    this.layout();
   }
 
   find(c: { query?: string; next?: boolean; back?: boolean; close?: boolean }) {
@@ -1544,6 +1706,39 @@ export class Clickless implements Browser {
   }
 
   /** Dev only: captures of the shell, the visible tab and the overlay (base64 PNG). */
+  /** Dev only: runs the app-menu item bound to a shortcut, e.g. "CmdOrCtrl+Shift+T", and says which it was. */
+  debugMenu(accelerator: string) {
+    const walk = (items: Electron.MenuItem[]): Electron.MenuItem | null => {
+      for (const it of items) {
+        if (String(it.accelerator ?? '').toLowerCase() === accelerator.toLowerCase()) return it;
+        const sub = it.submenu ? walk(it.submenu.items) : null;
+        if (sub) return sub;
+      }
+      return null;
+    };
+    const it = walk(Menu.getApplicationMenu()?.items ?? []);
+    if (!it) return { found: false };
+    (it as any).click?.();
+    return { found: true, label: it.label };
+  }
+
+  /** Dev only: evaluates JS in the window chrome (to find where things are before replaying input). */
+  async debugShellEval(code: string) {
+    return this.shell.webContents.executeJavaScript(code, true);
+  }
+
+  /** Dev only: replays mouse input on the window chrome (drags in the sidebar, split panes). */
+  async debugShellMouse(steps: { type: 'down' | 'move' | 'up'; x: number; y: number; wait?: number }[]) {
+    const wc = this.shell.webContents;
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    for (const s of steps) {
+      const type = s.type === 'down' ? 'mousePressed' : s.type === 'up' ? 'mouseReleased' : 'mouseMoved';
+      await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type, x: s.x, y: s.y, button: 'left', buttons: s.type === 'up' ? 0 : 1, clickCount: s.type === 'move' ? 0 : 1 });
+      await new Promise((r) => setTimeout(r, s.wait ?? 16));
+    }
+    return { ok: true, split: this.split(), active: this.activeTabId() };
+  }
+
   async debugCapture(): Promise<Record<string, string>> {
     const cap = async (wc: WebContents) => {
       if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
@@ -1555,12 +1750,16 @@ export class Clickless implements Browser {
     };
     const out: Record<string, string> = {};
     out.shell = await cap(this.shell.webContents);
-    const id = this.activeTabId();
-    const v = id ? this.views.get(id) : undefined;
-    if (v) {
-      out.tab = await cap(v.webContents);
-      out.tabBounds = JSON.stringify(v.getBounds());
+    const panes: { data: string; bounds: Rect }[] = [];
+    for (const id of this.lifted ? [] : this.visibleTabIds()) {
+      const v = this.views.get(id);
+      if (v && !v.webContents.isDestroyed()) panes.push({ data: await cap(v.webContents), bounds: v.getBounds() });
     }
+    if (panes[0]) {
+      out.tab = panes[0].data;
+      out.tabBounds = JSON.stringify(panes[0].bounds);
+    }
+    out.panes = JSON.stringify(panes);
     if (this.overlayState) out.overlay = await cap(this.overlay.webContents);
     return out;
   }
