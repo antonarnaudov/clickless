@@ -151,7 +151,7 @@ Targets: a ref from observe (12), visible text/label ("Sign in"), css:<selector>
 Options: --tab <id> to act on a specific tab, --json for raw JSON.`;
 
 async function mcpBridge() {
-  const server = new Server({ name: 'clickless', version: '0.1.0' }, { capabilities: { tools: {} }, instructions: await fetchInstructions() });
+  const server = new Server({ name: 'clickless', version: '0.2.0' }, { capabilities: { tools: {} }, instructions: await fetchInstructions() });
   let tools: unknown[] | null = null;
   server.oninitialized = () => {
     const n = server.getClientVersion()?.name;

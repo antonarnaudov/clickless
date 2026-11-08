@@ -13,7 +13,7 @@ Say it. It's done. Stop clicking through the web: tell Clickless what you want a
 
 You can take over at any moment, and the agent hands back to you for logins and captchas, then carries on.
 
-> Status: early preview (v0.1). macOS first; the code is cross-platform Electron but Windows/Linux builds aren't tested yet.
+> Status: early preview (v0.2). macOS first; the code is cross-platform Electron but Windows/Linux builds aren't tested yet.
 
 **[Download for Mac](https://github.com/antonarnaudov/clickless/releases/latest)** · free, no account, everything stays on your Mac ([privacy](docs/PRIVACY.md)).
 

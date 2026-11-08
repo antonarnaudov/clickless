@@ -36,7 +36,7 @@ export function Settings({ overlay, state }: { overlay: Extract<OverlayState, { 
           </button>
         ))}
         <div className="ver">
-          Clickless 0.1 · open source
+          Clickless 0.2 · open source
           <br />
           {state.control.running ? `API on :${state.control.port}` : 'API off'}
         </div>
