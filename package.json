@@ -1,7 +1,7 @@
 {
   "name": "clickless",
   "productName": "Clickless",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The AI-native open-source browser for everybody. Say it, it's done: any AI (Claude Code, local LLMs, any API) drives your real browser in a few calls.",
   "license": "MIT",
   "author": "Anton Arnaudov",
