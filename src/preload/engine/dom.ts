@@ -215,7 +215,7 @@ export function isModalDialog(el: Element): boolean {
 }
 
 export function shouldSkip(el: Element): boolean {
-  return SKIP_TAGS.has(el.tagName) || el.id === OVERLAY_ID;
+  return SKIP_TAGS.has(el.tagName) || el.id === OVERLAY_ID || el.id === 'clickless-autofill';
 }
 
 // ---------- geometry ----------

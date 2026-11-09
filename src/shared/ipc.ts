@@ -5,6 +5,9 @@ import type {
   ArchivedTab,
   AskState,
   BackupTarget,
+  DuplicateGroup,
+  SavedLoginInfo,
+  SiteDataEntry,
   ChatState,
   HistoryEntry,
   ImportSource,
@@ -123,6 +126,30 @@ export type Command =
   // ----- import -----
   /** Imports spaces, pinned tabs, folders, favourites and open tabs from another browser on this Mac. Returns an ImportReport. */
   | { type: 'import.run'; source: string }
+  // ----- browser settings -----
+  /** Asks the OS to make Clickless the default browser. */
+  | { type: 'app.makeDefaultBrowser' }
+  /** Opens a folder picker for downloads; returns the folder or null. */
+  | { type: 'downloads.chooseFolder' }
+  | { type: 'data.clear'; history?: boolean; since?: number; searches?: boolean; cookies?: boolean; cache?: boolean; downloads?: boolean; permissions?: boolean }
+  /** Signs you out of a site: removes its cookies and stored data. */
+  | { type: 'siteData.remove'; domain: string }
+  | { type: 'permissions.reset'; origin: string; permission?: string }
+  // ----- your browser profiles -----
+  | { type: 'profile.create'; name: string }
+  | { type: 'profile.update'; profileId: string; name?: string; color?: string }
+  /** Deletes a profile and its cookies, logins and site data; its spaces use the default profile. */
+  | { type: 'profile.delete'; profileId: string }
+  /** Which profile a space's tabs use (null = the default). */
+  | { type: 'space.profile'; spaceId: string; profileId: string | null }
+  // ----- saved passwords -----
+  | { type: 'passwords.upsert'; id?: string; origin: string; username: string; password?: string }
+  | { type: 'passwords.remove'; id: string }
+  /** Returns the password after the user confirms (Touch ID where available), or null. */
+  | { type: 'passwords.reveal'; id: string }
+  | { type: 'passwords.import' }
+  | { type: 'passwords.export' }
+  | { type: 'passwords.never'; origin: string; never: boolean }
   // ----- agent profiles -----
   /** Answer to an agent's request_tabs: the tabs to share (copies open in its window), or null to decline. */
   | { type: 'agents.share'; requestId: string; tabIds: TabId[] | null }
@@ -174,6 +201,12 @@ export interface QueryMap {
   /** Browsers Clickless can import from, and whether their data is on this Mac. */
   importSources: { args: Record<string, never>; result: ImportSource[] };
   recentlyClosed: { args: Record<string, never>; result: { id: string; url: string; title: string; favicon?: string; closedAt: number }[] };
+  siteData: { args: Record<string, never>; result: SiteDataEntry[] };
+  permissions: { args: Record<string, never>; result: { origin: string; permission: string; value: 'allow' | 'deny' }[] };
+  searchHistory: { args: { limit?: number }; result: { query: string; engine: string; url: string; at: number }[] };
+  duplicates: { args: Record<string, never>; result: DuplicateGroup[] };
+  passwords: { args: { query?: string }; result: SavedLoginInfo[] };
+  passwordsNever: { args: Record<string, never>; result: string[] };
 }
 
 export type QueryName = keyof QueryMap;
@@ -212,6 +245,10 @@ export const IPC = {
   rpc: 'clickless:rpc',
   /** frame content engine → main */
   rpcResult: 'clickless:rpc-result',
+  /** content preload ↔ main: saved passwords (sign-in forms) */
+  pwQuery: 'clickless:pw-query',
+  pwFill: 'clickless:pw-fill',
+  pwSubmit: 'clickless:pw-submit',
   /** frame → main, unsolicited (e.g. page became interactive) */
   frameEvent: 'clickless:frame-event',
 } as const;

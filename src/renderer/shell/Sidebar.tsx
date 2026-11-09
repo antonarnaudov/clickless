@@ -280,7 +280,8 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
       <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragMove={onDragMove} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => (setDrag(null), splitDrag.end())}>
         <div
           className="sidebar-inner"
-          style={{ width: width - 12 }}
+          // Settings → Appearance → Sidebar size zooms the contents; the width stays the sidebar's
+          style={{ width: (width - 12) / ({ compact: 0.9, large: 1.1 }[state.settings.appearance.sidebarSize as string] ?? 1) }}
           onKeyDown={(e) => {
             if (e.key !== 'Escape') return;
             if (selected.size) setSelected(new Set());

@@ -105,6 +105,25 @@
     "afterPack": "scripts/adhoc-sign.cjs",
     "asarUnpack": [
       "dist/cli/**"
+    ],
+    "protocols": [
+      {
+        "name": "Web page",
+        "schemes": [
+          "http",
+          "https"
+        ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "html",
+          "htm"
+        ],
+        "name": "HTML document",
+        "role": "Viewer"
+      }
     ]
   }
 }

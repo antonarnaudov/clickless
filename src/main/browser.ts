@@ -38,8 +38,11 @@ import type {
 import type { ActOptions, Browser, HeadlessPage, ObserveOptions, ReadOptions, ScreenshotOptions, ToolResult, AI } from './contracts';
 import { runAct, type ActHost } from './act';
 import { PageController } from './page';
+import { handleScheme } from './protocol';
 import type { BackupService } from './backup-service';
 import type { AgentProfiles } from './agent-profiles';
+import type { DataControls } from './data-controls';
+import type { PasswordService } from './password-service';
 import { countPlan, readSource, type ImportNode, type ImportPlan, type ImportReport } from './importers';
 import { Headless } from './headless';
 import { History, Secrets, flushState, saveStateSoon, type ClosedTab, type PersistedState, type PersistedTab } from './store';
@@ -80,6 +83,11 @@ export class Clickless implements Browser {
   backups?: BackupService;
   /** Agents' own browser profiles (main browser only; set in index.ts). */
   agentProfiles?: AgentProfiles;
+  /** Settings' data controls and saved passwords (main browser only). */
+  data?: DataControls;
+  passwords?: PasswordService;
+  /** Checked at start and after "make default" (the call is cheap, but not free on every push). */
+  defaultBrowserCache = false;
   /** This process is the user's browser or an agent's own profile (CLICKLESS_AGENT_PROFILE). */
   profile: UIState['profile'] = { kind: 'user' };
   readonly secrets = new Secrets();
@@ -94,7 +102,7 @@ export class Clickless implements Browser {
   private findState: FindState | null = null;
   private banners: Banner[] = [];
   private bannerWaiters = new Map<string, (value: string) => void>();
-  private downloads: Download[] = [];
+  downloads: Download[] = [];
   private get closed(): ClosedTab[] {
     return (this.state.closed ??= []);
   }
@@ -148,10 +156,43 @@ export class Clickless implements Browser {
   // window & views
   // =====================================================================
 
+  // ----- browser profiles: each one is its own Chromium session (cookies, logins, site data) -----
+
+  private sessions = new Map<string, Session>();
+
+  partitionOf(profileId?: string): string {
+    return !profileId || profileId === 'default' ? PARTITION : `persist:clickless-p-${profileId.replace(/[^a-z0-9-]/gi, '')}`;
+  }
+
+  /** The profile a tab belongs to: favourites use the default profile, others their space's. */
+  profileOfTab(t: Pick<Tab, 'favorite' | 'spaceId'>): string {
+    if (t.favorite) return 'default';
+    const p = this.state.spaces.find((s) => s.id === t.spaceId)?.profileId;
+    return p && (this.state.profiles ?? []).some((x) => x.id === p) ? p : 'default';
+  }
+
+  /** A profile's session, set up the first time it's used (permissions, downloads, privacy, clickless:// pages). */
+  sessionFor(profileId?: string): Session {
+    const part = this.partitionOf(profileId);
+    let ses = this.sessions.get(part);
+    if (ses) return ses;
+    ses = session.fromPartition(part);
+    ses.setUserAgent(ses.getUserAgent().replace(/\s(Electron|clickless|Clickless)\/\S+/g, ''));
+    this.sessions.set(part, ses);
+    if (part !== PARTITION) handleScheme(ses, path.join(app.getAppPath(), 'dist', 'renderer'), process.env.CLICKLESS_DEV_URL);
+    this.setupSession(ses);
+    return ses;
+  }
+
+  allSessions(): Session[] {
+    for (const p of this.state.profiles ?? []) this.sessionFor(p.id);
+    return [...this.sessions.values()];
+  }
+
   createWindow() {
     this.ses = session.fromPartition(PARTITION);
-    const ua = this.ses.getUserAgent().replace(/\s(Electron|clickless|Clickless)\/\S+/g, '');
-    this.ses.setUserAgent(ua);
+    this.ses.setUserAgent(this.ses.getUserAgent().replace(/\s(Electron|clickless|Clickless)\/\S+/g, ''));
+    this.sessions.set(PARTITION, this.ses);
     this.headlessPages = new Headless(this.ses, preloadPath('content'));
 
     const b = (this.state as any).bounds as Rect | undefined;
@@ -225,18 +266,27 @@ export class Clickless implements Browser {
     nativeTheme.on('updated', () => this.pushState());
     resize();
 
-    this.setupSession();
+    this.setupSession(this.ses);
 
-    // restore: wake the active tab of the active space
+    // restore: wake the active tab of the active space (or start on a new tab)
     const active = this.activeTabId();
-    if (active) this.activateTab(active);
+    if (this.state.settings.startup === 'newtab') this.openTab(NEWTAB).catch(() => {});
+    else if (active) this.activateTab(active);
     else if (!this.spaceTabs(this.state.activeSpaceId).length) this.openTab(NEWTAB).catch(() => {});
 
     setInterval(() => this.housekeeping(), 60_000);
   }
 
-  private setupSession() {
-    const ses = this.ses;
+  private setupSession(ses: Session) {
+    ses.setSpellCheckerEnabled(this.state.settings.spellcheck !== false);
+    // Global Privacy Control / Do Not Track, when the user asks for it
+    ses.webRequest.onBeforeSendHeaders((d, cb) => {
+      if (this.state.settings.privacy?.gpc) {
+        d.requestHeaders['Sec-GPC'] = '1';
+        d.requestHeaders['DNT'] = '1';
+      }
+      cb({ requestHeaders: d.requestHeaders });
+    });
     ses.setPermissionRequestHandler((wc, permission, callback, details) => {
       const auto = ['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock', 'window-management', 'speaker-selection'];
       if (auto.includes(permission)) return callback(true);
@@ -290,14 +340,17 @@ export class Clickless implements Browser {
     });
 
     ses.on('will-download', (_e, item) => {
-      const dir = app.getPath('downloads');
+      const dl = this.state.settings.downloads;
+      const dir = dl?.folder && fs.existsSync(dl.folder) ? dl.folder : app.getPath('downloads');
       let name = item.getFilename() || 'download';
       let target = path.join(dir, name);
       for (let i = 1; fs.existsSync(target) && i < 500; i++) {
         const ext = path.extname(name);
         target = path.join(dir, `${path.basename(name, ext)} (${i})${ext}`);
       }
-      item.setSavePath(target);
+      // "ask where to save": Chromium's own save dialog, starting in that folder
+      if (dl?.ask) item.setSaveDialogOptions({ defaultPath: target });
+      else item.setSavePath(target);
       const d: Download = {
         id: uid('d'),
         filename: path.basename(target),
@@ -319,6 +372,10 @@ export class Clickless implements Browser {
       item.once('done', (_ev, st) => {
         d.state = st === 'completed' ? 'completed' : st === 'cancelled' ? 'cancelled' : 'interrupted';
         d.receivedBytes = item.getReceivedBytes();
+        if (item.getSavePath()) {
+          d.path = item.getSavePath();
+          d.filename = path.basename(d.path);
+        }
         if (d.state === 'completed') this.event({ type: 'toast', text: `Downloaded ${d.filename}`, tone: 'success' });
         this.pushState();
       });
@@ -327,26 +384,35 @@ export class Clickless implements Browser {
   }
 
   /** Web preferences of every page: also used for tabs a page opens itself (target=_blank, window.open). */
-  private pagePrefs(): Electron.WebPreferences {
+  private pagePrefs(tab?: Pick<Tab, 'favorite' | 'spaceId'>): Electron.WebPreferences {
+    const profile = tab ? this.profileOfTab(tab) : 'default';
+    this.sessionFor(profile);
     return {
       preload: preloadPath('content'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       nodeIntegrationInSubFrames: true,
-      partition: PARTITION,
+      partition: this.partitionOf(profile),
       scrollBounce: true,
-      spellcheck: true,
+      spellcheck: this.state.settings.spellcheck !== false,
+      zoomFactor: Math.max(0.3, Math.min(3, (this.state.settings.appearance.pageZoom || 100) / 100)),
     };
   }
 
   private createView(tab: Tab, adopt?: Electron.BrowserWindowConstructorOptions): WebContentsView {
     const view = adopt
-      ? new WebContentsView({ ...(adopt as any), webPreferences: { ...(adopt.webPreferences ?? {}), ...this.pagePrefs() } })
-      : new WebContentsView({ webPreferences: this.pagePrefs() });
+      ? new WebContentsView({ ...(adopt as any), webPreferences: { ...(adopt.webPreferences ?? {}), ...this.pagePrefs(tab) } })
+      : new WebContentsView({ webPreferences: this.pagePrefs(tab) });
     view.setBorderRadius(10);
-    view.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#1b1a22' : '#ffffff');
+    // Web pages that don't paint a background are white, as in every browser (dark only if the page
+    // asks for it with color-scheme); Clickless's own pages (new tab…) keep the dark base in dark mode.
+    const base = (url: string) => view.setBackgroundColor(nativeTheme.shouldUseDarkColors && !/^(https?|file|data|blob):/i.test(url) ? '#1b1a22' : '#ffffff');
+    base(tab.url);
     const wc = view.webContents;
+    wc.on('did-start-navigation', (d) => {
+      if (d.isMainFrame && !d.isSameDocument) base(d.url);
+    });
     this.views.set(tab.id, view);
     this.live.set(tab.id, { loading: false, canGoBack: false, canGoForward: false, audible: false });
     const ctl = new PageController(wc, { settings: () => this.state.settings, isVisible: () => this.isVisible(tab.id) });
@@ -452,7 +518,7 @@ export class Clickless implements Browser {
         action: 'allow',
         outlivesOpener: true,
         // without this the new page gets no content preload: the agent engine wouldn't run in it
-        overrideBrowserWindowOptions: { webPreferences: this.pagePrefs() },
+        overrideBrowserWindowOptions: { webPreferences: this.pagePrefs(tab()) },
         createWindow: (options) => {
           const t = this.newTabRecord(details.url, { spaceId: tab()?.spaceId, openerTabId: id });
           const view = this.createView(t, options);
@@ -657,6 +723,8 @@ export class Clickless implements Browser {
       backup: this.backups?.status() ?? { hasPassphrase: false, hasGithubToken: false, running: false },
       profile: this.profile,
       agentProfiles: this.agentProfiles?.status() ?? [],
+      profiles: this.state.profiles ?? [],
+      isDefaultBrowser: this.defaultBrowserCache,
     };
   }
 
@@ -706,6 +774,11 @@ export class Clickless implements Browser {
     const id = this.tabIdOf(wc);
     if (id && this.tabs.get(id)?.internal) return 'internal';
     return null;
+  }
+
+  /** An agent is acting in this tab right now (no autofill, no password prompts while it does). */
+  agentActiveOn(tabId: TabId | null): boolean {
+    return !!tabId && this.activityFields.active && this.activityFields.tabId === tabId;
   }
 
   tabIdOf(wc: WebContents): TabId | null {
@@ -830,6 +903,7 @@ export class Clickless implements Browser {
     const t = this.tabs.get(tabId);
     if (!t) return;
     const wasSaved = t.pinned || t.favorite;
+    const profileBefore = this.profileOfTab(t);
     if (to.favorite !== undefined) t.favorite = to.favorite;
     if (to.spaceId && this.state.spaces.some((s) => s.id === to.spaceId)) t.spaceId = to.spaceId;
     if (to.folderId !== undefined) {
@@ -846,6 +920,7 @@ export class Clickless implements Browser {
       t.folderId = undefined;
     }
     this.rememberSaved(t, wasSaved);
+    if (this.profileOfTab(t) !== profileBefore) this.reloadInProfile(t.id);
     this.place(this.containerItems(t.spaceId, t.pinned, t.folderId, t.favorite), tabId, to.beforeId);
     if (t.spaceId !== this.state.activeSpaceId && this.activeTabId() === tabId && !t.favorite) {
       delete this.state.activeTabBySpace[this.state.activeSpaceId];
@@ -1056,6 +1131,29 @@ export class Clickless implements Browser {
       this.layout();
       this.pushState();
       this.setOverlay({ kind: 'palette', mode: 'new-tab' });
+    }
+  }
+
+  /** Which browser profile a space's tabs use; their open pages reload in it. */
+  setSpaceProfile(spaceId: string, profileId: string | undefined) {
+    const s = this.state.spaces.find((x) => x.id === spaceId);
+    if (!s) return;
+    const next = profileId && profileId !== 'default' ? profileId : undefined;
+    if ((s.profileId ?? undefined) === next) return;
+    s.profileId = next;
+    for (const t of this.tabs.values()) if (t.spaceId === spaceId && !t.favorite) this.reloadInProfile(t.id);
+    this.save();
+    this.pushState();
+  }
+
+  /** A tab's profile changed: its page can't move sessions, so it's rebuilt in the new one. */
+  reloadInProfile(id: TabId) {
+    if (!this.views.has(id)) return;
+    const visible = this.visibleTabIds().includes(id);
+    this.sleepTab(id);
+    if (visible) {
+      this.wake(id);
+      this.layout();
     }
   }
 
@@ -1850,6 +1948,31 @@ export class Clickless implements Browser {
       await new Promise((r) => setTimeout(r, s.wait ?? 16));
     }
     return { ok: true, split: this.split(), active: this.activeTabId() };
+  }
+
+  /** Debug only: real (trusted) clicks and typing in the active tab, as a person would — not an agent action. */
+  async debugTabInput(steps: ({ click: [number, number] } | { text: string } | { key: string } | { eval: string } | { wait: number })[]) {
+    const id = this.activeTabId();
+    const wc = id ? this.views.get(id)?.webContents : undefined;
+    if (!wc) return { error: 'no active tab' };
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    const out: unknown[] = [];
+    for (const s of steps) {
+      if ('click' in s) {
+        const [x, y] = s.click;
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+      } else if ('text' in s) await wc.debugger.sendCommand('Input.insertText', { text: s.text });
+      else if ('key' in s) {
+        const code = s.key === 'Enter' ? 13 : s.key === 'Tab' ? 9 : 0;
+        for (const type of ['rawKeyDown', 'keyUp'])
+          await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type, key: s.key, code: s.key, windowsVirtualKeyCode: code, ...(s.key === 'Enter' && type === 'rawKeyDown' ? { text: '\r' } : {}) });
+        if (s.key === 'Enter') await wc.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', text: '\r', windowsVirtualKeyCode: 13 });
+      } else if ('eval' in s) out.push(await wc.executeJavaScript(s.eval).catch((e) => String(e)));
+      await new Promise((r) => setTimeout(r, 'wait' in s ? s.wait : 60));
+    }
+    return { ok: true, out };
   }
 
   async debugCapture(): Promise<Record<string, string>> {

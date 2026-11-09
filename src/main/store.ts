@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DEFAULT_SETTINGS } from '../shared/settings';
-import type { ArchivedTab, Folder, HistoryEntry, Settings, Space, Tab } from '../shared/types';
+import type { ArchivedTab, Folder, HistoryEntry, Profile, Settings, Space, Tab } from '../shared/types';
 import { nestFlattenedFolders } from './migrations';
 
 export interface PersistedTab
@@ -28,6 +28,8 @@ export interface PersistedState {
   sitePermissions: Record<string, Record<string, 'allow' | 'deny'>>;
   /** One-time data upgrades already applied. */
   migrated?: string[];
+  /** Your browser profiles; spaces pick one with profileId. */
+  profiles?: Profile[];
   /** Recently closed tabs, newest last, for ⇧⌘T and History → Recently Closed. */
   closed?: ClosedTab[];
 }
@@ -69,6 +71,9 @@ function mergeSettings(saved: Partial<Settings> | undefined): Settings {
     backup: { ...DEFAULT_SETTINGS.backup, ...(s.backup ?? {}) },
     agents: { ...DEFAULT_SETTINGS.agents, ...(s.agents ?? {}), access: { ...(s.agents?.access ?? {}) } },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...(s.appearance ?? {}) },
+    downloads: { ...DEFAULT_SETTINGS.downloads, ...(s.downloads ?? {}) },
+    privacy: { ...DEFAULT_SETTINGS.privacy, ...(s.privacy ?? {}) },
+    passwords: { ...DEFAULT_SETTINGS.passwords, ...(s.passwords ?? {}) },
     providers: s.providers ?? [],
   };
 }
@@ -89,6 +94,7 @@ export function defaultState(): PersistedState {
     archived: [],
     settings: mergeSettings(undefined),
     sitePermissions: {},
+    profiles: [{ id: 'default', name: 'Personal', color: '#5f7f75' }],
   };
 }
 
@@ -108,6 +114,7 @@ export function loadState(): PersistedState {
     folders: saved.folders ?? [],
     sitePermissions: saved.sitePermissions ?? {},
     closed: Array.isArray(saved.closed) ? saved.closed.slice(-30) : [],
+    profiles: Array.isArray(saved.profiles) && saved.profiles.length ? saved.profiles : base.profiles,
   };
   nestFlattenedFolders(loaded);
   return loaded;

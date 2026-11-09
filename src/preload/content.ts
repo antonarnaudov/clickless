@@ -11,6 +11,7 @@ import { snapshot } from './engine/snapshot';
 import { resolve } from './engine/resolve';
 import { readPage } from './engine/readable';
 import { clearMarks, marks, pointer, pointerHide } from './engine/overlay';
+import { startAutofill } from './engine/autofill';
 import { hasText, quietMs, startObserving, waitFor, watchCollect, watchStart } from './engine/watch';
 
 const isTop = window.top === window;
@@ -214,6 +215,8 @@ ipcRenderer.on(IPC.rpc, async (_e, req: RpcRequest) => {
 // Track DOM changes from the start so "quiet" detection works on the first action.
 if (document.documentElement) startObserving();
 else document.addEventListener('readystatechange', () => startObserving(), { once: true });
+// saved passwords on web pages (not on Clickless's own pages)
+if (/^https?:$/.test(location.protocol)) startAutofill();
 
 // ---------- internal pages ----------
 

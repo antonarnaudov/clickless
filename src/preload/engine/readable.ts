@@ -40,7 +40,7 @@ function childrenOf(el: Element): Node[] {
 
 function isHidden(el: Element, o: Opts): boolean {
   if (!o.live || o.collapsed) return el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true';
-  if (el.id === OVERLAY_ID) return true;
+  if (el.id === OVERLAY_ID || el.id === 'clickless-autofill') return true;
   const he = el as HTMLElement;
   if (typeof he.checkVisibility === 'function') return !he.checkVisibility({ visibilityProperty: true } as any);
   const cs = getComputedStyle(el);

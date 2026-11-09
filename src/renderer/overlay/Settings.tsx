@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Eye, EyeOff, KeyRound, Laptop, LayoutGrid, Moon, Plug, RefreshCw, Search, ShieldCheck, Sparkles, Sun, Trash2, X, type LucideIcon } from 'lucide-react';
+import { Check, Cookie, Copy, Download, Eye, EyeOff, FolderOpen, Globe, History, KeyRound, Laptop, LayoutGrid, Lock, Moon, Palette, Pencil, Plug, Plus, RefreshCw, Search, Shield, ShieldCheck, Sparkles, Sun, Trash2, Users, X, type LucideIcon } from 'lucide-react';
 import type { Command, DeepPartial, QueryMap } from '../../shared/ipc';
-import { PROVIDER_PRESETS, SEARCH_ENGINES, type ProviderPreset } from '../../shared/settings';
+import { PROVIDER_PRESETS, SEARCH_ENGINES, SPACE_COLORS, type ProviderPreset } from '../../shared/settings';
 import type { ImportReport, ImportSource, OverlayState, ProviderConfig, Settings as SettingsT, UIState } from '../../shared/types';
 import { cmd, query } from '../common/api';
 import { BrandIcon, PROVIDER_BRAND, providerBrand } from '../common/BrandIcon';
+import { Favicon } from '../common/Favicon';
 import { agentClient } from '../../shared/agents';
 import { copyText, cx, debounce, timeAgo } from '../common/util';
 
@@ -12,10 +13,14 @@ type Section = NonNullable<Extract<OverlayState, { kind: 'settings' }>['section'
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: 'general', label: 'General', icon: LayoutGrid },
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'tabs', label: 'Tabs', icon: Laptop },
+  { id: 'profiles', label: 'Profiles', icon: Users },
+  { id: 'passwords', label: 'Passwords', icon: KeyRound },
+  { id: 'privacy', label: 'Privacy & data', icon: Lock },
   { id: 'ai', label: 'AI models', icon: Sparkles },
   { id: 'agents', label: 'Agents & API', icon: Plug },
   { id: 'search', label: 'AI search', icon: Search },
-  { id: 'tabs', label: 'Tabs', icon: Laptop },
   { id: 'backup', label: 'Backup', icon: ShieldCheck },
 ];
 
@@ -49,7 +54,11 @@ export function Settings({ overlay, state }: { overlay: Extract<OverlayState, { 
           </button>
         </div>
         <div className="s-content scroll">
-          {section === 'general' && <General s={s} />}
+          {section === 'general' && <General s={s} state={state} />}
+          {section === 'appearance' && <Appearance s={s} state={state} />}
+          {section === 'profiles' && <Profiles state={state} />}
+          {section === 'passwords' && <Passwords s={s} />}
+          {section === 'privacy' && <Privacy s={s} />}
           {section === 'ai' && <AI s={s} />}
           {section === 'agents' && <Agents state={state} />}
           {section === 'search' && <SearchSection s={s} />}
@@ -117,24 +126,34 @@ function LazyInput({ value, onSave, placeholder, type = 'text', width, mono }: {
 
 // ---------- General ----------
 
-function General({ s }: { s: SettingsT }) {
+function General({ s, state }: { s: SettingsT; state: UIState }) {
   return (
     <>
       <div className="s-group">
-        <div className="lbl">Appearance</div>
-        <Row title="Theme" desc="Follows macOS unless you pick one.">
+        <div className="lbl">Browser</div>
+        <Row title="Default browser" desc={state.isDefaultBrowser ? 'Links you open in other apps open in Clickless.' : 'Links from other apps open in another browser.'}>
+          {state.isDefaultBrowser ? (
+            <span className="tag ok">
+              <Check size={12} /> Default
+            </span>
+          ) : (
+            <button className="btn btn-soft btn-sm" onClick={() => cmd({ type: 'app.makeDefaultBrowser' })}>
+              Make Clickless the default
+            </button>
+          )}
+        </Row>
+        <Row title="On start" desc="Your pinned tabs, folders and favourites are always kept.">
           <Seg
-            value={s.appearance.theme}
-            onChange={(theme) => update({ appearance: { theme } })}
+            value={s.startup}
+            onChange={(startup) => update({ startup })}
             options={[
-              { v: 'system', label: 'Auto', icon: Laptop },
-              { v: 'light', label: 'Light', icon: Sun },
-              { v: 'dark', label: 'Dark', icon: Moon },
+              { v: 'restore', label: 'Continue where I left off' },
+              { v: 'newtab', label: 'Open a new tab' },
             ]}
           />
         </Row>
-        <Row title="Address above the page" desc="Show a compact URL bar on top of the page instead of in the sidebar.">
-          <Switch label="Address above the page" on={s.appearance.compactUrl} onChange={(compactUrl) => update({ appearance: { compactUrl } })} />
+        <Row title="Check spelling while typing">
+          <Switch label="Spellcheck" on={s.spellcheck} onChange={(spellcheck) => update({ spellcheck })} />
         </Row>
       </div>
       <div className="s-group">
@@ -154,11 +173,470 @@ function General({ s }: { s: SettingsT }) {
             <LazyInput value={s.customSearchURL ?? ''} placeholder="https://example.com/search?q=%s" onSave={(customSearchURL) => update({ customSearchURL })} width={300} mono />
           </Row>
         )}
+      </div>
+      <div className="s-group">
+        <div className="lbl">Downloads</div>
+        <Row title="Save files to" desc={s.downloads.folder ?? 'Downloads'}>
+          <button className="btn btn-ghost btn-sm" onClick={() => cmd({ type: 'downloads.chooseFolder' })}>
+            <FolderOpen size={13} /> Change…
+          </button>
+          {s.downloads.folder && (
+            <button className="btn btn-ghost btn-sm" onClick={() => update({ downloads: { folder: null } })}>
+              Use Downloads
+            </button>
+          )}
+        </Row>
+        <Row title="Ask where to save each file">
+          <Switch label="Ask where to save" on={s.downloads.ask} onChange={(ask) => update({ downloads: { ask } })} />
+        </Row>
+      </div>
+    </>
+  );
+}
+
+// ---------- Appearance ----------
+
+function Appearance({ s, state }: { s: SettingsT; state: UIState }) {
+  const a = s.appearance;
+  return (
+    <>
+      <div className="s-group">
+        <div className="lbl">Theme</div>
+        <Row title="Mode" desc="Follows macOS unless you pick one.">
+          <Seg
+            value={a.theme}
+            onChange={(theme) => update({ appearance: { theme } })}
+            options={[
+              { v: 'system', label: 'Auto', icon: Laptop },
+              { v: 'light', label: 'Light', icon: Sun },
+              { v: 'dark', label: 'Dark', icon: Moon },
+            ]}
+          />
+        </Row>
+        <Row title="Colour strength" desc="How much the space colour tints the window.">
+          <Seg
+            value={a.tint}
+            onChange={(tint) => update({ appearance: { tint } })}
+            options={[
+              { v: 'subtle', label: 'Subtle' },
+              { v: 'standard', label: 'Standard' },
+              { v: 'vivid', label: 'Vivid' },
+            ]}
+          />
+        </Row>
+      </div>
+      <div className="s-group">
+        <div className="lbl">Space colours</div>
+        <div className="desc">Each space tints the window with its own colour. Double-click a space’s name in the sidebar to change its icon.</div>
+        {state.spaces.map((sp) => (
+          <Row key={sp.id} title={`${sp.icon}  ${sp.name}`}>
+            <div className="swatches">
+              {SPACE_COLORS.map((c) => (
+                <button key={c} className={cx('swatch', sp.color.toLowerCase() === c.toLowerCase() && 'on')} style={{ background: c }} title={c} onClick={() => cmd({ type: 'space.update', spaceId: sp.id, patch: { color: c } })} />
+              ))}
+              <label className="swatch custom" title="Pick any colour" style={{ background: SPACE_COLORS.includes(sp.color) ? undefined : sp.color }}>
+                <input type="color" value={sp.color} onChange={(e) => cmd({ type: 'space.update', spaceId: sp.id, patch: { color: e.target.value } })} />
+              </label>
+            </div>
+          </Row>
+        ))}
+      </div>
+      <div className="s-group">
+        <div className="lbl">Layout</div>
+        <Row title="Address above the page" desc="Show the address and back/forward above the page instead of in the sidebar.">
+          <Switch label="Address above the page" on={a.compactUrl} onChange={(compactUrl) => update({ appearance: { compactUrl } })} />
+        </Row>
+        <Row title="Sidebar size">
+          <Seg
+            value={a.sidebarSize}
+            onChange={(sidebarSize) => update({ appearance: { sidebarSize } })}
+            options={[
+              { v: 'compact', label: 'Compact' },
+              { v: 'standard', label: 'Standard' },
+              { v: 'large', label: 'Large' },
+            ]}
+          />
+        </Row>
+        <Row title="Page zoom" desc="For pages you haven’t zoomed yourself (⌘+ / ⌘−). Applies to tabs as they open.">
+          <select className="field" style={{ width: 120 }} value={a.pageZoom} onChange={(e) => update({ appearance: { pageZoom: Number(e.target.value) } })}>
+            {[75, 80, 90, 100, 110, 125, 150].map((z) => (
+              <option key={z} value={z}>
+                {z}%
+              </option>
+            ))}
+          </select>
+        </Row>
+      </div>
+    </>
+  );
+}
+
+// ---------- Profiles ----------
+
+function Profiles({ state }: { state: UIState }) {
+  const [name, setName] = useState('');
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const profiles = state.profiles.length ? state.profiles : [{ id: 'default', name: 'Personal', color: '#5f7f75' }];
+  const spacesOf = (id: string) => state.spaces.filter((sp) => (sp.profileId ?? 'default') === id);
+  return (
+    <>
+      <div className="s-group">
+        <div className="lbl">Your profiles</div>
+        <div className="desc">A profile keeps its own cookies, logins and site data. Give a space its own profile to be signed in to different accounts in each space (say, work and personal).</div>
+        {profiles.map((p) => (
+          <div key={p.id} className="s-row">
+            <div className="k" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="pdot" style={{ background: p.color }} />
+              <span style={{ display: 'flex', flexDirection: 'column' }}>
+                <LazyInput value={p.name} width={180} onSave={(v) => v.trim() && cmd({ type: 'profile.update', profileId: p.id, name: v })} />
+                <span>{spacesOf(p.id).map((sp) => `${sp.icon} ${sp.name}`).join(' · ') || 'No spaces use it yet'}</span>
+              </span>
+            </div>
+            <div className="v">
+              {p.id === 'default' ? (
+                <span className="tag">Default</span>
+              ) : deleting === p.id ? (
+                <button className="btn btn-danger btn-sm" onClick={() => (setDeleting(null), cmd({ type: 'profile.delete', profileId: p.id }))}>
+                  Delete it and its logins?
+                </button>
+              ) : (
+                <button className="btn btn-ghost btn-sm" onClick={() => setDeleting(p.id)}>
+                  <Trash2 size={13} /> Delete
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        <Row title="New profile">
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input className="field" style={{ width: 180 }} value={name} placeholder="e.g. Work" onChange={(e) => setName(e.target.value)} />
+            <button className="btn btn-soft btn-sm" disabled={!name.trim()} onClick={() => (cmd({ type: 'profile.create', name }), setName(''))}>
+              <Plus size={13} /> Add
+            </button>
+          </div>
+        </Row>
+      </div>
+      <div className="s-group">
+        <div className="lbl">Which profile each space uses</div>
+        {state.spaces.map((sp) => (
+          <Row key={sp.id} title={`${sp.icon}  ${sp.name}`}>
+            <select className="field" style={{ width: 200 }} value={sp.profileId ?? 'default'} onChange={(e) => cmd({ type: 'space.profile', spaceId: sp.id, profileId: e.target.value === 'default' ? null : e.target.value })}>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Row>
+        ))}
+        <div className="desc">Favourites always use the default profile. Open pages reload when their space changes profile.</div>
+      </div>
+      <AgentProfilesGroup state={state} />
+    </>
+  );
+}
+
+// ---------- Passwords ----------
+
+function Passwords({ s }: { s: SettingsT }) {
+  const [q, setQ] = useState('');
+  const [list, setList] = useState<QueryMap['passwords']['result']>([]);
+  const [never, setNever] = useState<string[]>([]);
+  const [shown, setShown] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [form, setForm] = useState({ origin: '', username: '', password: '' });
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = () => {
+    query('passwords', { query: q }).then(setList, () => setList([]));
+    query('passwordsNever', {}).then(setNever, () => setNever([]));
+  };
+  useEffect(load, [q]);
+  const run = async (c: Command, ok?: (r: any) => string | null) => {
+    setMsg(null);
+    try {
+      const r = await window.clickless.cmd(c);
+      const t = ok?.(r);
+      if (t) setMsg({ ok: true, text: t });
+      load();
+      return r;
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+      return undefined;
+    }
+  };
+  const host = (o: string) => o.replace(/^https?:\/\//, '');
+  const startEdit = (id: string | 'new', l?: { origin: string; username: string }) => {
+    setEditing(id);
+    setForm({ origin: l?.origin ?? '', username: l?.username ?? '', password: '' });
+  };
+  return (
+    <>
+      <div className="s-group">
+        <div className="desc">Kept on this Mac only, each one encrypted with your keychain. Agents never see them, and their own browsers have none. Showing or exporting a password asks for Touch ID (or your confirmation).</div>
+        <Row title="Offer to save passwords" desc="After you sign in to a site.">
+          <Switch label="Offer to save" on={s.passwords.offer} onChange={(offer) => update({ passwords: { offer } })} />
+        </Row>
+        <Row title="Offer saved logins in sign-in forms" desc="Pick one from the list under the field; nothing is filled without you.">
+          <Switch label="Autofill" on={s.passwords.autofill} onChange={(autofill) => update({ passwords: { autofill } })} />
+        </Row>
+      </div>
+      <div className="s-group">
+        <div className="lbl">Saved passwords · {list.length}</div>
+        <div style={{ display: 'flex', gap: 6, margin: '6px 0 8px' }}>
+          <input className="field" style={{ flex: 1 }} value={q} placeholder="Search sites and usernames" onChange={(e) => setQ(e.target.value)} />
+          <button className="btn btn-soft btn-sm" onClick={() => startEdit('new')}>
+            <Plus size={13} /> Add
+          </button>
+          <button className="btn btn-ghost btn-sm" title="From a CSV exported by Chrome, Comet, Arc, Edge, Safari or Firefox" onClick={() => run({ type: 'passwords.import' }, (r) => (r ? `Imported ${r.added} new, updated ${r.updated}, skipped ${r.skipped}. You can delete ${r.file.split('/').pop()} now.` : null))}>
+            Import…
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => run({ type: 'passwords.export' }, (r) => (r ? `Exported to ${r}. It isn’t encrypted: delete it when you’re done.` : null))}>
+            Export…
+          </button>
+        </div>
+        {editing === 'new' && <PasswordForm form={form} setForm={setForm} onCancel={() => setEditing(null)} onSave={() => run({ type: 'passwords.upsert', ...form }, () => 'Saved.').then((r) => r && setEditing(null))} />}
+        {list.map((l) => (
+          <div key={l.id} className="pw-row">
+            <Favicon url={l.origin} title={host(l.origin)} />
+            <span className="site truncate" title={l.origin}>
+              {host(l.origin)}
+            </span>
+            <span className="user truncate">{l.username || '—'}</span>
+            <span className="secret mono">{shown[l.id] ?? '••••••••'}</span>
+            <span className="acts">
+              <button
+                className="icon-btn sm"
+                title={shown[l.id] ? 'Hide' : 'Show password'}
+                onClick={async () => {
+                  if (shown[l.id]) return setShown(({ [l.id]: _x, ...rest }) => rest);
+                  const pw = (await window.clickless.cmd({ type: 'passwords.reveal', id: l.id }).catch(() => null)) as string | null;
+                  if (pw !== null) setShown((x) => ({ ...x, [l.id]: pw }));
+                }}
+              >
+                {shown[l.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+              </button>
+              <button
+                className="icon-btn sm"
+                title="Copy password"
+                onClick={async () => {
+                  const pw = shown[l.id] ?? ((await window.clickless.cmd({ type: 'passwords.reveal', id: l.id }).catch(() => null)) as string | null);
+                  if (pw !== null && (await copyText(pw))) setMsg({ ok: true, text: `Copied the password for ${host(l.origin)}.` });
+                }}
+              >
+                <Copy size={13} />
+              </button>
+              <button className="icon-btn sm" title="Edit" onClick={() => startEdit(l.id, l)}>
+                <Pencil size={13} />
+              </button>
+              <button className="icon-btn sm" title="Delete" onClick={() => run({ type: 'passwords.remove', id: l.id })}>
+                <Trash2 size={13} />
+              </button>
+            </span>
+            {editing === l.id && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <PasswordForm form={form} setForm={setForm} editingExisting onCancel={() => setEditing(null)} onSave={() => run({ type: 'passwords.upsert', id: l.id, origin: form.origin, username: form.username, password: form.password || undefined }, () => 'Saved.').then((r) => r && setEditing(null))} />
+              </div>
+            )}
+          </div>
+        ))}
+        {!list.length && <div className="desc">{q ? 'No saved passwords match.' : 'No saved passwords yet. Sign in to a site and Clickless offers to save it, or import them from another browser.'}</div>}
+        {msg && <div className="desc" style={{ color: msg.ok ? undefined : 'var(--danger)' }}>{msg.text}</div>}
+      </div>
+      {never.length > 0 && (
+        <div className="s-group">
+          <div className="lbl">Never saved for</div>
+          {never.map((o) => (
+            <Row key={o} title={host(o)}>
+              <button className="btn btn-ghost btn-sm" onClick={() => run({ type: 'passwords.never', origin: o, never: false })}>
+                Remove
+              </button>
+            </Row>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PasswordForm({ form, setForm, onSave, onCancel, editingExisting }: { form: { origin: string; username: string; password: string }; setForm(f: { origin: string; username: string; password: string }): void; onSave(): void; onCancel(): void; editingExisting?: boolean }) {
+  return (
+    <div className="pw-form">
+      <input className="field" placeholder="https://example.com" value={form.origin} onChange={(e) => setForm({ ...form, origin: e.target.value })} />
+      <input className="field" placeholder="Username or email" value={form.username} autoComplete="off" onChange={(e) => setForm({ ...form, username: e.target.value })} />
+      <input className="field" type="password" placeholder={editingExisting ? 'New password (leave empty to keep)' : 'Password'} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+      <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+        Cancel
+      </button>
+      <button className="btn btn-primary btn-sm" disabled={!form.origin || (!editingExisting && !form.password)} onClick={onSave}>
+        Save
+      </button>
+    </div>
+  );
+}
+
+// ---------- Privacy & data ----------
+
+function Privacy({ s }: { s: SettingsT }) {
+  const [sites, setSites] = useState<QueryMap['siteData']['result'] | null>(null);
+  const [siteQ, setSiteQ] = useState('');
+  const [perms, setPerms] = useState<QueryMap['permissions']['result']>([]);
+  const [searches, setSearches] = useState<QueryMap['searchHistory']['result']>([]);
+  const [what, setWhat] = useState({ history: true, searches: true, cookies: false, cache: true, downloads: false, permissions: false });
+  const [range, setRange] = useState(3_600_000);
+  const [confirm, setConfirm] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const load = () => {
+    query('siteData', {}).then(setSites, () => setSites([]));
+    query('permissions', {}).then(setPerms, () => setPerms([]));
+    query('searchHistory', { limit: 12 }).then(setSearches, () => setSearches([]));
+  };
+  useEffect(load, []);
+  const shownSites = (sites ?? []).filter((x) => !siteQ || x.domain.includes(siteQ.toLowerCase()));
+  const label: Record<string, string> = { media: 'Camera / microphone', geolocation: 'Location', notifications: 'Notifications', 'clipboard-read': 'Clipboard', 'display-capture': 'Screen sharing', midi: 'MIDI', hid: 'HID devices', serial: 'Serial ports', usb: 'USB devices', 'storage-access': 'Cookies across sites', 'idle-detection': 'Idle detection' };
+  return (
+    <>
+      <div className="s-group">
+        <div className="lbl">Privacy</div>
+        <Row title="Ask sites not to sell or share your data" desc="Sends Global Privacy Control (and Do Not Track) with every request.">
+          <Switch label="Global Privacy Control" on={s.privacy.gpc} onChange={(gpc) => update({ privacy: { gpc } })} />
+        </Row>
         <Row title="Search suggestions" desc="Suggests searches while you type in the address bar. What you type is sent to DuckDuckGo; turn it off to keep it on this Mac.">
           <Switch label="Search suggestions" on={s.searchSuggestions} onChange={(searchSuggestions) => update({ searchSuggestions })} />
         </Row>
       </div>
+
+      <div className="s-group">
+        <div className="lbl">History</div>
+        <Row title="Browsing history" desc="Every site you’ve visited, by day; search it or remove single entries.">
+          <button className="btn btn-ghost btn-sm" onClick={() => cmd({ type: 'ui.history' }).then(() => cmd({ type: 'ui.overlay', overlay: null }))}>
+            <History size={13} /> Open History
+          </button>
+        </Row>
+        <Row title="Search history" desc={searches.length ? searches.slice(0, 5).map((x) => `“${x.query}”`).join(' · ') : 'No searches yet.'}>
+          <button className="btn btn-ghost btn-sm" disabled={!searches.length} onClick={() => cmd({ type: 'data.clear', searches: true }).then(load)}>
+            Clear searches
+          </button>
+        </Row>
+      </div>
+
+      <div className="s-group">
+        <div className="lbl">Clear browsing data</div>
+        <div className="clear-grid">
+          {(
+            [
+              ['history', 'History'],
+              ['searches', 'Search history'],
+              ['cookies', 'Cookies and site data (signs you out)'],
+              ['cache', 'Cached images and files'],
+              ['downloads', 'Download list'],
+              ['permissions', 'Site permissions'],
+            ] as const
+          ).map(([k, l]) => (
+            <label key={k} className="check">
+              <input type="checkbox" checked={what[k]} onChange={(e) => setWhat({ ...what, [k]: e.target.checked })} /> {l}
+            </label>
+          ))}
+        </div>
+        <Row title="History from" desc="Cookies, site data and cache are always cleared completely.">
+          <select className="field" style={{ width: 160 }} value={range} onChange={(e) => setRange(Number(e.target.value))}>
+            <option value={3_600_000}>The last hour</option>
+            <option value={86_400_000}>The last 24 hours</option>
+            <option value={7 * 86_400_000}>The last 7 days</option>
+            <option value={28 * 86_400_000}>The last 4 weeks</option>
+            <option value={0}>All time</option>
+          </select>
+          {confirm ? (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={async () => {
+                setConfirm(false);
+                await cmd({ type: 'data.clear', ...what, since: range ? Date.now() - range : undefined });
+                setDone('Cleared.');
+                load();
+              }}
+            >
+              Clear now?
+            </button>
+          ) : (
+            <button className="btn btn-soft btn-sm" disabled={!Object.values(what).some(Boolean)} onClick={() => (setDone(null), setConfirm(true))}>
+              Clear…
+            </button>
+          )}
+        </Row>
+        {done && <div className="desc">{done}</div>}
+      </div>
+
+      <div className="s-group">
+        <div className="lbl">Cookies and site data · {sites?.length ?? '…'} sites</div>
+        <input className="field" style={{ width: '100%', margin: '4px 0 6px' }} value={siteQ} placeholder="Search sites" onChange={(e) => setSiteQ(e.target.value)} />
+        <div className="site-list scroll">
+          {shownSites.slice(0, 200).map((x) => (
+            <div key={x.domain} className="site-row">
+              <Favicon url={`https://${x.domain}`} title={x.domain} />
+              <span className="truncate">{x.domain}</span>
+              <span className="muted">{x.cookies} cookie{x.cookies === 1 ? '' : 's'}</span>
+              <button className="icon-btn sm" title={`Remove ${x.domain}'s cookies and data (signs you out there)`} onClick={() => cmd({ type: 'siteData.remove', domain: x.domain }).then(load)}>
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+          {sites && !shownSites.length && <div className="desc">No sites{siteQ ? ' match' : ' have stored data'}.</div>}
+        </div>
+      </div>
+
+      <div className="s-group">
+        <div className="lbl">Site permissions</div>
+        {perms.map((p) => (
+          <Row key={`${p.origin} ${p.permission}`} title={p.origin.replace(/^https?:\/\//, '')} desc={`${label[p.permission] ?? p.permission}: ${p.value === 'allow' ? 'allowed' : 'blocked'}`}>
+            <button className="btn btn-ghost btn-sm" onClick={() => cmd({ type: 'permissions.reset', origin: p.origin, permission: p.permission }).then(load)}>
+              Reset
+            </button>
+          </Row>
+        ))}
+        {!perms.length && <div className="desc">No site has asked for anything yet. When one asks (camera, location, notifications…), your answer shows up here.</div>}
+      </div>
     </>
+  );
+}
+
+// ---------- Tabs: duplicates ----------
+
+function Duplicates() {
+  const [groups, setGroups] = useState<QueryMap['duplicates']['result'] | null>(null);
+  const load = () => query('duplicates', {}).then(setGroups, () => setGroups([]));
+  useEffect(() => {
+    load();
+  }, []);
+  const extra = (groups ?? []).reduce((n, g) => n + g.tabs.length - 1, 0);
+  const remove = async (ids: string[]) => {
+    for (const id of ids) await cmd({ type: 'tab.delete', tabId: id });
+    load();
+  };
+  return (
+    <div className="s-group">
+      <div className="lbl">Duplicate tabs · {groups ? `${extra} extra cop${extra === 1 ? 'y' : 'ies'}` : '…'}</div>
+      <div className="desc">The same page open or saved in more than one place. The first one listed is kept; removed copies can be brought back with ⇧⌘T.</div>
+      {(groups ?? []).slice(0, 60).map((g) => (
+        <div key={g.url} className="dup-row">
+          <Favicon url={g.url} title={g.title} />
+          <span className="truncate" title={g.url}>
+            <b>{g.title || g.url}</b>
+            <span className="muted"> · {g.tabs.map((t) => t.where).join('  ·  ')}</span>
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={() => remove(g.tabs.slice(1).map((t) => t.id))}>
+            Keep one
+          </button>
+        </div>
+      ))}
+      {groups && groups.length > 1 && (
+        <Row title={`Remove all ${extra} extra copies`}>
+          <button className="btn btn-danger btn-sm" onClick={() => remove(groups.flatMap((g) => g.tabs.slice(1).map((t) => t.id)))}>
+            Keep one of each
+          </button>
+        </Row>
+      )}
+      {groups && !groups.length && <div className="desc">No duplicates.</div>}
+    </div>
   );
 }
 
@@ -540,7 +1018,14 @@ function Agents({ state }: { state: UIState }) {
         </div>
       )}
 
-      <AgentProfilesGroup state={state} />
+      <div className="s-group">
+        <div className="lbl">Agent profiles</div>
+        <Row title="Agents work in their own browser" desc="Each agent that connects gets its own profile and window; it asks before seeing your tabs.">
+          <button className="btn btn-ghost btn-sm" onClick={() => cmd({ type: 'ui.overlay', overlay: { kind: 'settings', section: 'profiles' } })}>
+            Manage in Profiles
+          </button>
+        </Row>
+      </div>
 
       <div className="s-group">
         <div className="lbl">Access</div>
@@ -646,6 +1131,7 @@ function SearchSection({ s }: { s: SettingsT }) {
 
 function Tabs({ s }: { s: SettingsT }) {
   return (
+    <>
     <div className="s-group">
       <Row title="Archive Today tabs after" desc="Unpinned tabs you haven’t touched move to the archive (find them again in ⌘T). Pinned tabs and favourites stay.">
         <select className="field" style={{ width: 160 }} value={s.tabs.archiveAfterHours} onChange={(e) => update({ tabs: { archiveAfterHours: Number(e.target.value) } })}>
@@ -668,6 +1154,8 @@ function Tabs({ s }: { s: SettingsT }) {
       </Row>
       <ImportRow />
     </div>
+    <Duplicates />
+    </>
   );
 }
 

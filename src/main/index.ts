@@ -2,6 +2,7 @@
 
 import { app, nativeTheme } from 'electron';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { APP_NAME } from '../shared/settings';
 import { Clickless, PARTITION } from './browser';
 import { createAI } from './ai';
@@ -14,6 +15,8 @@ import { createTools } from './tools';
 import { listSources } from './importers';
 import { BackupService } from './backup-service';
 import { AgentProfiles } from './agent-profiles';
+import { DataControls } from './data-controls';
+import { PasswordService } from './password-service';
 import { session } from 'electron';
 
 const VERSION = app.getVersion();
@@ -63,6 +66,7 @@ async function startControl() {
     debugCapture: () => browser.debugCapture(),
     debugCommand: (c) => (runCmd ? runCmd(c) : Promise.resolve(null)),
     debugShellMouse: (steps) => browser.debugShellMouse(steps as any),
+    debugTabInput: (steps) => browser.debugTabInput(steps as any),
     debugShellEval: (code) => browser.debugShellEval(code),
     debugMenu: (acc) => browser.debugMenu(acc),
     agentRoute: browser.agentProfiles
@@ -155,6 +159,9 @@ app.whenReady().then(async () => {
   } else {
     browser.backups = new BackupService(browser);
     browser.agentProfiles = new AgentProfiles(browser);
+    browser.data = new DataControls(browser);
+    // agents' own browsers have no password store
+    browser.passwords = new PasswordService(browser);
   }
   const ses = session.fromPartition(PARTITION);
   handleScheme(ses, path.join(app.getAppPath(), 'dist', 'renderer'), process.env.CLICKLESS_DEV_URL);
@@ -188,11 +195,30 @@ app.whenReady().then(async () => {
     menuTimer = setTimeout(() => buildMenu(browser, runCommand), 300);
   };
   browser.createWindow();
+  for (const u of pendingUrls.splice(0)) browser.openTab(u).catch(() => {});
   if (AGENT) browser.win.setTitle(`${AGENT.name} — its own Clickless profile`);
   await startControl();
 });
 
-app.on('second-instance', () => {
+// Links from other apps (when Clickless is the default browser) and .html files opened with it.
+const pendingUrls: string[] = [];
+const openExternalUrl = (url: string) => {
+  if (!browser?.win) return void pendingUrls.push(url);
+  browser.openTab(url).catch(() => {});
+  browser.bringToFront();
+};
+app.on('open-url', (e, url) => {
+  e.preventDefault();
+  openExternalUrl(url);
+});
+app.on('open-file', (e, file) => {
+  e.preventDefault();
+  openExternalUrl(pathToFileURL(file).href);
+});
+
+app.on('second-instance', (_e, argv) => {
+  const url = argv.find((a) => /^https?:\/\//.test(a));
+  if (url) openExternalUrl(url);
   if (!browser?.win) return;
   if (browser.win.isMinimized()) browser.win.restore();
   browser.win.focus();

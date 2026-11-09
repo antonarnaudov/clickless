@@ -160,7 +160,9 @@ export function registerIpc(app: IpcApp) {
         return b.createSpace(c);
       case 'space.update': {
         const s = b.state.spaces.find((x) => x.id === c.spaceId);
-        if (s) Object.assign(s, c.patch);
+        const { profileId, ...patch } = c.patch;
+        if (s) Object.assign(s, patch);
+        if (s && profileId !== undefined) b.setSpaceProfile(s.id, profileId);
         b.save();
         return b.pushState();
       }
@@ -280,6 +282,7 @@ export function registerIpc(app: IpcApp) {
         const before = b.state.settings;
         b.state.settings = deepMerge<Settings>(before, c.patch);
         nativeTheme.themeSource = b.state.settings.appearance.theme;
+        if (before.spellcheck !== b.state.settings.spellcheck) for (const ses of b.allSessions()) ses.setSpellCheckerEnabled(b.state.settings.spellcheck);
         b.save();
         b.pushState();
         const ctlA = before.control;
@@ -318,6 +321,37 @@ export function registerIpc(app: IpcApp) {
         return app.regenerateToken();
       case 'import.run':
         return b.importFrom(String(c.source ?? '').toLowerCase());
+      case 'app.makeDefaultBrowser':
+        return b.data?.makeDefault();
+      case 'downloads.chooseFolder':
+        return b.data?.chooseDownloadFolder() ?? null;
+      case 'data.clear':
+        return b.data?.clear(c);
+      case 'siteData.remove':
+        return b.data?.removeSite(c.domain);
+      case 'permissions.reset':
+        return b.data?.resetPermission(c.origin, c.permission);
+      case 'profile.create':
+        return b.data?.createProfile(c.name);
+      case 'profile.update':
+        return b.data?.updateProfile(c.profileId, c);
+      case 'profile.delete':
+        return b.data?.deleteProfile(c.profileId);
+      case 'space.profile':
+        return b.setSpaceProfile(c.spaceId, c.profileId ?? undefined);
+      case 'passwords.upsert':
+        return b.passwords?.upsert(c);
+      case 'passwords.remove':
+        b.passwords?.remove(c.id);
+        return b.pushState();
+      case 'passwords.reveal':
+        return b.passwords?.reveal(c.id) ?? null;
+      case 'passwords.import':
+        return b.passwords?.importCsv() ?? null;
+      case 'passwords.export':
+        return b.passwords?.exportCsv() ?? null;
+      case 'passwords.never':
+        return b.passwords?.store.setNever(c.origin, c.never);
       case 'agents.share':
         return b.agentProfiles?.resolveShare(c.requestId, c.tabIds);
       case 'agents.access':
@@ -368,6 +402,18 @@ export function registerIpc(app: IpcApp) {
         return listSources() as any;
       case 'recentlyClosed':
         return b.recentlyClosed() as any;
+      case 'siteData':
+        return ((await b.data?.siteData()) ?? []) as any;
+      case 'permissions':
+        return (b.data?.permissions() ?? []) as any;
+      case 'searchHistory':
+        return (b.data?.searchHistory(a.limit) ?? []) as any;
+      case 'duplicates':
+        return (b.data?.duplicates() ?? []) as any;
+      case 'passwords':
+        return (b.passwords?.list(a.query).map((l) => ({ id: l.id, origin: l.origin, username: l.username, lastUsedAt: l.lastUsedAt, updatedAt: l.updatedAt })) ?? []) as any;
+      case 'passwordsNever':
+        return (b.passwords?.store.neverList() ?? []) as any;
     }
     throw new Error(`unknown query ${String(name)}`);
   }

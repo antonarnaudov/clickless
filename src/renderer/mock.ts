@@ -185,6 +185,8 @@ function installMock() {
     backup: { hasPassphrase: false, hasGithubToken: false, running: false },
     profile: params.get('agent') ? { kind: 'agent', id: 'claude-code', name: 'Claude Code' } : { kind: 'user' },
     agentProfiles: [{ id: 'claude-code', name: 'Claude Code', running: true, lastUsedAt: now - 60_000, calls: 14, tabs: 3, access: 'own' }],
+    profiles: [{ id: 'default', name: 'Personal', color: '#5f7f75' }, { id: 'pwork', name: 'Work', color: '#3b82f6' }],
+    isDefaultBrowser: false,
   };
 
   // ---------- chat ----------
@@ -546,6 +548,12 @@ function installMock() {
       { url: 'https://ollama.com/library', title: 'Ollama library', visitCount: 4, lastVisitAt: now - 2 * 86400_000 },
       { url: 'https://www.figma.com/', title: 'Figma', visitCount: 20, lastVisitAt: now - 3 * 86400_000 },
     ],
+    siteData: () => [{ domain: 'example.com', cookies: 4 }, { domain: 'github.com', cookies: 12 }],
+    permissions: () => [{ origin: 'https://meet.example.com', permission: 'media', value: 'allow' }],
+    searchHistory: () => [{ query: 'best usb-c hub', engine: 'Google', url: 'https://www.google.com/search?q=best+usb-c+hub', at: now - 3600_000 }],
+    duplicates: () => [{ url: 'https://example.com/', title: 'Example Domain', tabs: [{ id: 't1', where: '🌿 Personal', pinned: true, favorite: false }, { id: 't2', where: '💼 Work / Reading', pinned: true, favorite: false }] }],
+    passwords: () => [{ id: 'pw1', origin: 'https://example.com', username: 'ada@example.com', lastUsedAt: now - 86400_000, updatedAt: now - 86400_000 * 3 }],
+    passwordsNever: () => ['https://bank.example'],
     recentlyClosed: () => [{ id: 'c1', url: 'https://example.com/closed', title: 'A tab you closed', closedAt: now - 120_000 }],
     importSources: () => [
       { id: 'arc', name: 'Arc', available: true },

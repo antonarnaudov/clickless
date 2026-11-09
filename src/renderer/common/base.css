@@ -37,9 +37,9 @@
   --ink-2: oklch(from var(--space) 0.42 0.035 h);
   --ink-3: oklch(from var(--space) 0.56 0.03 h);
   --ink-4: oklch(from var(--space) 0.68 0.025 h);
-  --chrome-1: oklch(from var(--space) 0.955 min(0.045, calc(c * 0.3)) h);
-  --chrome-2: oklch(from var(--space) 0.915 min(0.08, calc(c * 0.45)) calc(h + 32));
-  --chrome-3: oklch(from var(--space) 0.93 min(0.06, calc(c * 0.4)) calc(h - 24));
+  --chrome-1: oklch(from var(--space) 0.955 min(calc(0.045 * var(--tint, 1)), calc(c * 0.3 * var(--tint, 1))) h);
+  --chrome-2: oklch(from var(--space) 0.915 min(calc(0.08 * var(--tint, 1)), calc(c * 0.45 * var(--tint, 1))) calc(h + 32));
+  --chrome-3: oklch(from var(--space) 0.93 min(calc(0.06 * var(--tint, 1)), calc(c * 0.4 * var(--tint, 1))) calc(h - 24));
   --glaze: rgb(255 255 255 / 0.4);
   --glaze-strong: rgb(255 255 255 / 0.86);
   --glaze-line: rgb(255 255 255 / 0.7);
@@ -72,9 +72,9 @@
     --ink-2: oklch(from var(--space) 0.8 0.02 h);
     --ink-3: oklch(from var(--space) 0.64 0.02 h);
     --ink-4: oklch(from var(--space) 0.5 0.02 h);
-    --chrome-1: oklch(from var(--space) 0.245 0.04 h);
-    --chrome-2: oklch(from var(--space) 0.17 0.035 calc(h + 32));
-    --chrome-3: oklch(from var(--space) 0.2 0.04 calc(h - 24));
+    --chrome-1: oklch(from var(--space) 0.245 calc(0.04 * var(--tint, 1)) h);
+    --chrome-2: oklch(from var(--space) 0.17 calc(0.035 * var(--tint, 1)) calc(h + 32));
+    --chrome-3: oklch(from var(--space) 0.2 calc(0.04 * var(--tint, 1)) calc(h - 24));
     --glaze: rgb(255 255 255 / 0.055);
     --glaze-strong: rgb(255 255 255 / 0.12);
     --glaze-line: rgb(255 255 255 / 0.1);
@@ -106,9 +106,9 @@
   --ink-2: oklch(from var(--space) 0.8 0.02 h);
   --ink-3: oklch(from var(--space) 0.64 0.02 h);
   --ink-4: oklch(from var(--space) 0.5 0.02 h);
-  --chrome-1: oklch(from var(--space) 0.245 0.04 h);
-  --chrome-2: oklch(from var(--space) 0.17 0.035 calc(h + 32));
-  --chrome-3: oklch(from var(--space) 0.2 0.04 calc(h - 24));
+  --chrome-1: oklch(from var(--space) 0.245 calc(0.04 * var(--tint, 1)) h);
+  --chrome-2: oklch(from var(--space) 0.17 calc(0.035 * var(--tint, 1)) calc(h + 32));
+  --chrome-3: oklch(from var(--space) 0.2 calc(0.04 * var(--tint, 1)) calc(h - 24));
   --glaze: rgb(255 255 255 / 0.055);
   --glaze-strong: rgb(255 255 255 / 0.12);
   --glaze-line: rgb(255 255 255 / 0.1);

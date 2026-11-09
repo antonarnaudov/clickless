@@ -17,7 +17,12 @@ export const DEFAULT_SETTINGS: Settings = {
   searchSuggestions: true,
   agents: { defaultAccess: 'own', access: {} },
   backup: { target: null, schedule: 'daily', keep: 10, lastAt: null, lastWhere: null, lastError: null },
-  appearance: { theme: 'system', compactUrl: false },
+  appearance: { theme: 'system', compactUrl: false, tint: 'standard', sidebarSize: 'standard', pageZoom: 100 },
+  startup: 'restore',
+  downloads: { folder: null, ask: false },
+  spellcheck: true,
+  privacy: { gpc: false },
+  passwords: { offer: true, autofill: true },
 };
 
 export const SEARCH_ENGINES: Record<Exclude<Settings['searchEngine'], 'custom'>, { label: string; url: string }> = {

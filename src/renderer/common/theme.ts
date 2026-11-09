@@ -13,6 +13,14 @@ export function useTheme(state: UIState | null) {
   useEffect(() => {
     if (color) document.documentElement.style.setProperty('--space', color);
   }, [color]);
+  const tint = state?.settings.appearance.tint ?? 'standard';
+  const size = state?.settings.appearance.sidebarSize ?? 'standard';
+  useEffect(() => {
+    document.documentElement.style.setProperty('--tint', String({ subtle: 0.45, standard: 1, vivid: 1.9 }[tint] ?? 1));
+  }, [tint]);
+  useEffect(() => {
+    document.documentElement.dataset.sbsize = size;
+  }, [size]);
   useEffect(() => {
     document.documentElement.dataset.platform = state?.platform ?? window.clickless?.platform ?? 'darwin';
   }, [state?.platform]);

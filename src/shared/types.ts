@@ -19,6 +19,8 @@ export interface Space {
   color: string;
   /** The pinned section is folded away in the sidebar. */
   collapsed?: boolean;
+  /** Browser profile (cookies, logins, site data) this space's tabs use; the default profile when unset. */
+  profileId?: string;
   /** The Today section is folded away. */
   todayCollapsed?: boolean;
 }
@@ -146,7 +148,7 @@ export interface FindState {
 
 export type OverlayState =
   | { kind: 'palette'; mode: 'new-tab' | 'navigate' | 'commands' | 'ask'; initial?: string; tabId?: TabId }
-  | { kind: 'settings'; section?: 'general' | 'ai' | 'agents' | 'search' | 'tabs' | 'backup' }
+  | { kind: 'settings'; section?: 'general' | 'appearance' | 'tabs' | 'profiles' | 'passwords' | 'privacy' | 'ai' | 'agents' | 'search' | 'backup' }
   /** An agent working in its own profile asks for some of the user's tabs. */
   | { kind: 'share-tabs'; requestId: string; clientId: string; clientName: string; reason: string; preselect: string[] }
   | { kind: 'organize'; spaceId: string; loading: boolean; proposal: OrganizeProposal | null; error?: string }
@@ -246,6 +248,31 @@ export interface Settings {
     theme: 'system' | 'light' | 'dark';
     /** Show the URL above the page instead of only in the sidebar. */
     compactUrl: boolean;
+    /** How strongly the space colour tints the window. */
+    tint: 'subtle' | 'standard' | 'vivid';
+    /** Size of the sidebar's text and rows. */
+    sidebarSize: 'compact' | 'standard' | 'large';
+    /** Default zoom for web pages, in percent. */
+    pageZoom: number;
+  };
+  /** On start: reopen the tabs you had open, or open a new tab. */
+  startup: 'restore' | 'newtab';
+  downloads: {
+    /** Where downloads go (null = the Downloads folder). */
+    folder: string | null;
+    /** Ask where to save each file. */
+    ask: boolean;
+  };
+  spellcheck: boolean;
+  privacy: {
+    /** Send Global Privacy Control and Do Not Track with every request. */
+    gpc: boolean;
+  };
+  passwords: {
+    /** Offer to save passwords you sign in with. */
+    offer: boolean;
+    /** Offer saved logins in sign-in forms. */
+    autofill: boolean;
   };
 }
 
@@ -291,6 +318,38 @@ export interface UIState {
   profile: { kind: 'user' } | { kind: 'agent'; id: string; name: string };
   /** Agents with their own browser profile (main window only). */
   agentProfiles: AgentProfileStatus[];
+  /** Your browser profiles: separate cookies, logins and site data that spaces can use. */
+  profiles: Profile[];
+  /** Clickless is the system's default browser. */
+  isDefaultBrowser: boolean;
+}
+
+export interface Profile {
+  /** 'default' is the profile every space uses unless told otherwise. */
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface SiteDataEntry {
+  /** example.com */
+  domain: string;
+  cookies: number;
+}
+
+export interface SavedLoginInfo {
+  id: string;
+  origin: string;
+  username: string;
+  lastUsedAt: number;
+  updatedAt: number;
+}
+
+export interface DuplicateGroup {
+  url: string;
+  title: string;
+  /** The copies, first one kept: where each lives. */
+  tabs: { id: string; where: string; pinned: boolean; favorite: boolean }[];
 }
 
 export interface AgentProfileStatus {

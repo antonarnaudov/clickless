@@ -43,14 +43,19 @@ Now: “(untitled)” — https://httpbin.org/post (new page) · tab t2 · 3049m
 
 ## For you: the browser
 
-- **Spaces** with their own colour, pinned tabs and folders; **favourites** shared across spaces; **Today** tabs that archive themselves after 12 hours (configurable) and go to sleep when idle.
+- **Spaces** with their own colour, pinned tabs and folders; **favourites** shared across spaces; **Today** tabs that archive themselves after 12 hours (configurable) and go to sleep when idle. Spaces and Today fold up like folders.
+- **Saved tabs stay saved**: closing a pinned tab, a favourite or a tab in a folder (`⌘W` or its `–` button) only unloads it, back at the address you saved; a small dot shows which tabs are open. *Delete tab* in its menu removes it for good (`⇧⌘T` brings it back).
+- **Folders inside folders**, each with its own colour and an optional emoji icon (right-click a folder).
+- **Profiles**: give a space its own profile to be signed in to different accounts in each space (separate cookies, logins and site data).
+- **Saved passwords**: Clickless offers to save a password after you sign in and offers it again under the sign-in field. Kept on your Mac, each one encrypted with your keychain; showing or exporting one asks for Touch ID. Import and export CSV from Chrome, Comet, Arc, Edge, Safari or Firefox. Agents never get them.
+- **Settings for the usual things**: theme, colour strength, sidebar size, page zoom, start-up, default browser, download folder, spellcheck, search engine; clear browsing data, search history, cookies and site data per site, site permissions, Global Privacy Control, duplicate tabs.
 - **Command bar** (`⌘T`): open, search, switch to an open tab, find archived tabs and history, run commands. `Tab` switches it to **Ask AI**.
 - **AI search** (`⌘J`): searches, reads the top pages and answers with numbered citations, with follow-ups. Works with any model you configure.
 - **Agent panel** (`⌘E`): chat with an agent about the page or give it a task. You see every step, and an animated cursor and highlight on the page while it works. Pause or stop any agent at any time (`⌘.`).
 - **Tidy tabs** (`⇧⌘O`): groups Today's tabs into named folders and suggests closing duplicates.
 - **Split view, 2–4 panes**: drag a tab from the sidebar onto the page (left, right, next to a pane, or onto one to replace it); drag a pane by its grip to move or swap it, or back onto the sidebar to take it out. Taking a pane out never closes its tab.
 - **History** (`⌘Y`): every site you've visited by day, searchable, deletable; clear the last hour, today or everything. `⇧⌘T` reopens closed tabs with their own back/forward history, in their old place, even after a restart.
-- Find in page, downloads, per-site permissions, Arc-style keyboard shortcuts (`⌘T` new tab, `⌘W` close, `⌘L` address, `⌘[`/`⌘]` back/forward, `⌃Tab` next tab, `⌘S` sidebar, `⌘D` pin, `⌃1…9` spaces, `⌘1…9` tabs). On Windows and Linux, `Ctrl` instead of `⌘`.
+- Find in page, downloads, per-site permissions, Arc-style keyboard shortcuts (`⌘T` new tab, `⌘W` close (saved tabs unload), `⌘L` address, `⌘[`/`⌘]` back/forward, `⌃Tab` next tab, `⌘S` sidebar, `⌘D` pin, `⌃1…9` spaces, `⌘1…9` tabs). On Windows and Linux, `Ctrl` instead of `⌘`.
 - **Move in from Arc, Comet, Chrome, Brave or Edge** (Settings → Tabs, or `clickless import arc`): spaces, pinned tabs, folders, favourites and their icons from Arc; bookmarks and the tabs you had open from Chromium browsers. Run it again any time; nothing is duplicated. Passwords and logins are never read.
 
 ## Download and install
@@ -154,6 +159,7 @@ Small local models get a trimmed context automatically: the newest page state in
 - Agents act in your real profile, with your logins. Clickless shows when one is driving and which client it is, and **Pause** stops every agent at once. The built-in agent asks before buying, sending, posting or deleting; external agents get the same instruction.
 - The DevTools port is off by default; when on, any local process can control the browser.
 - Page scripts can't see Clickless's engine: it runs in an isolated world in every frame.
+- Saved passwords are filled only on the exact site they were saved for, only after you pick one, and never while an agent is acting in the tab. Agents' own browsers have no password store.
 
 ## How it works
 

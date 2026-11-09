@@ -13,7 +13,7 @@ const observer = new MutationObserver((records) => {
   let relevant = false;
   for (const r of records) {
     const t = r.target as Element;
-    if (t.nodeType === 1 && (t.id === OVERLAY_ID || t.closest?.(`#${OVERLAY_ID}`))) continue;
+    if (t.nodeType === 1 && (t.id === OVERLAY_ID || t.id === 'clickless-autofill' || t.closest?.(`#${OVERLAY_ID}, #clickless-autofill`))) continue;
     relevant = true;
     if (watching && r.type === 'childList') for (const n of r.addedNodes) if (added.length < 400) added.push(n);
     if (watching && r.type === 'characterData' && added.length < 400) added.push(r.target);
