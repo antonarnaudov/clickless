@@ -58,9 +58,12 @@ export const TopBar = memo(function TopBar({ state, tab }: { state: UIState; tab
           )}
         </div>
       )}
-      <button className="icon-btn" title="Agent panel (⌘E)" style={state.panel.open ? { color: 'var(--accent-text)' } : undefined} onClick={() => cmd({ type: 'ui.panel', open: !state.panel.open })}>
-        <Sparkles size={15} strokeWidth={1.9} />
-      </button>
+      {/* with the sidebar showing, its “Ask Clickless” row is the one way in */}
+      {!state.sidebar.visible && (
+        <button className="icon-btn" title="Ask Clickless (⌘E)" style={state.panel.open ? { color: 'var(--accent-text)' } : undefined} onClick={() => cmd({ type: 'ui.panel', open: !state.panel.open })}>
+          <Sparkles size={15} strokeWidth={1.9} />
+        </button>
+      )}
     </div>
   );
 });

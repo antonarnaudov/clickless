@@ -8,9 +8,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DEFAULT_SETTINGS } from '../shared/settings';
 import type { ArchivedTab, Folder, HistoryEntry, Settings, Space, Tab } from '../shared/types';
+import { nestFlattenedFolders } from './migrations';
 
 export interface PersistedTab
-  extends Pick<Tab, 'id' | 'spaceId' | 'url' | 'title' | 'favicon' | 'favorite' | 'pinned' | 'folderId' | 'order' | 'createdAt' | 'lastActiveAt' | 'zoom' | 'muted'> {}
+  extends Pick<Tab, 'id' | 'spaceId' | 'url' | 'title' | 'savedUrl' | 'savedTitle' | 'favicon' | 'favorite' | 'pinned' | 'folderId' | 'order' | 'createdAt' | 'lastActiveAt' | 'zoom' | 'muted'> {}
 
 export interface PersistedState {
   version: 1;
@@ -25,6 +26,8 @@ export interface PersistedState {
   archived: ArchivedTab[];
   settings: Settings;
   sitePermissions: Record<string, Record<string, 'allow' | 'deny'>>;
+  /** One-time data upgrades already applied. */
+  migrated?: string[];
   /** Recently closed tabs, newest last, for ⇧⌘T and History → Recently Closed. */
   closed?: ClosedTab[];
 }
@@ -95,7 +98,7 @@ export function loadState(): PersistedState {
   const saved = readJSON<PersistedState>(file);
   if (!saved || saved.version !== 1 || !Array.isArray(saved.spaces) || !saved.spaces.length) return defaultState();
   const base = defaultState();
-  return {
+  const loaded: PersistedState = {
     ...base,
     ...saved,
     settings: mergeSettings(saved.settings),
@@ -106,6 +109,8 @@ export function loadState(): PersistedState {
     sitePermissions: saved.sitePermissions ?? {},
     closed: Array.isArray(saved.closed) ? saved.closed.slice(-30) : [],
   };
+  nestFlattenedFolders(loaded);
+  return loaded;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;

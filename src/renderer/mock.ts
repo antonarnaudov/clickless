@@ -394,7 +394,7 @@ function installMock() {
         return fid;
       }
       case 'folder.update':
-        set({ folders: state.folders.map((f) => (f.id === c.folderId ? { ...f, ...c.patch } : f)) });
+        set({ folders: state.folders.map((f) => (f.id === c.folderId ? { ...f, ...c.patch, color: c.patch.color ?? f.color, icon: c.patch.icon ?? f.icon } : f)) as any });
         return;
       case 'folder.delete':
         set({ folders: state.folders.filter((f) => f.id !== c.folderId), tabs: c.closeTabs ? state.tabs.filter((t) => t.folderId !== c.folderId) : state.tabs.map((t) => (t.folderId === c.folderId ? { ...t, folderId: undefined } : t)) });

@@ -151,10 +151,16 @@
   background: var(--glaze-strong);
   box-shadow: var(--shadow-row), inset 0 0 0 1.5px color-mix(in oklch, var(--accent) 60%, transparent);
 }
-.fav-tile.asleep .fav,
-.fav-tile.asleep .fav-letter {
-  filter: grayscale(0.7);
-  opacity: 0.65;
+.fav-tile.awake::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--ink) 55%, transparent);
 }
 .fav-tile .dot {
   position: absolute;
@@ -178,11 +184,37 @@
 .space-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   height: 28px;
-  padding: 0 4px 0 8px;
+  padding: 0 4px 0 4px;
   margin-bottom: 2px;
   border-radius: 8px;
+  cursor: default;
+}
+.space-head:hover {
+  background: var(--glaze);
+}
+.space-head .chev,
+.divider .chev {
+  flex: none;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: transform 180ms var(--ease-out), opacity 120ms;
+}
+.space-head .chev.open,
+.divider .chev.open {
+  transform: rotate(90deg);
+}
+.space-head:hover .chev,
+.space-head.collapsed .chev,
+.divider:hover .chev,
+.divider.collapsed .chev {
+  opacity: 1;
+}
+.space-head .count {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
 }
 .space-head .emoji {
   font-size: 14px;
@@ -225,6 +257,12 @@
   background: var(--line);
 }
 .divider .label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -6px;
+  padding: 2px 4px;
+  border-radius: 6px;
   font-size: 10.5px;
   font-weight: 650;
   letter-spacing: 0.07em;
@@ -290,13 +328,17 @@
   background: var(--glaze-strong);
   box-shadow: var(--shadow-row), inset 0 0 0 1.5px color-mix(in oklch, var(--accent) 55%, transparent);
 }
-.row.asleep .fav,
-.row.asleep .fav-letter {
-  filter: grayscale(0.8);
-  opacity: 0.55;
-}
-.row.asleep .title {
-  color: var(--ink-3);
+/* a loaded (open) tab: a small dot in the gutter; everything else stays at full colour */
+.row.awake::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--ink) 55%, transparent);
 }
 .row .title {
   flex: 1;
@@ -394,8 +436,15 @@
   transform: rotate(90deg);
 }
 .folder-head .ficon {
-  color: var(--ink-3);
+  color: var(--fc, var(--ink-3));
   flex: none;
+}
+.folder-head .femoji {
+  width: 15px;
+  flex: none;
+  font-size: 13.5px;
+  line-height: 1;
+  text-align: center;
 }
 .folder-head .count {
   font-size: 11px;
@@ -417,8 +466,9 @@
   left: 16px;
   top: 2px;
   bottom: 4px;
-  width: 1px;
-  background: var(--line);
+  width: 1.5px;
+  border-radius: 1px;
+  background: color-mix(in oklch, var(--fc, var(--ink-3)) 45%, transparent);
 }
 
 /* agent card in the sidebar */
@@ -1595,4 +1645,17 @@ button.chip:hover {
 .brand-svg svg {
   width: 100%;
   height: 100%;
+}
+
+.divider .label:hover {
+  background: var(--glaze);
+  color: var(--ink);
+}
+.menu-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
 }

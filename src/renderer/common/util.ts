@@ -98,7 +98,8 @@ export async function copyText(text: string): Promise<boolean> {
 
 // ---------- sidebar model ----------
 
-export type SectionItem = { kind: 'tab'; tab: Tab } | { kind: 'folder'; folder: Folder; tabs: Tab[] };
+/** A tab, or a folder with its direct tabs, its contents in order (tabs and sub-folders) and how many tabs it holds in all. */
+export type SectionItem = { kind: 'tab'; tab: Tab } | { kind: 'folder'; folder: Folder; tabs: Tab[]; items: SectionItem[]; count: number };
 
 export interface SidebarModel {
   favorites: Tab[];
@@ -115,11 +116,21 @@ export function buildSidebar(state: Pick<UIState, 'tabs' | 'folders' | 'activeSp
   const inSpace = state.tabs.filter((t) => !t.favorite && t.spaceId === state.activeSpaceId);
   const folders = state.folders.filter((f) => f.spaceId === state.activeSpaceId);
   const folderIds = new Set(folders.map((f) => f.id));
+  const folderItem = (f: Folder, seen: Set<string>): SectionItem & { order: number } => {
+    seen.add(f.id);
+    const tabs = inSpace.filter((t) => t.folderId === f.id).sort(byOrder);
+    const subs = folders.filter((x) => x.parentId === f.id && !seen.has(x.id)).map((x) => folderItem(x, seen));
+    const items = [...tabs.map((t) => ({ kind: 'tab' as const, tab: t, order: t.order })), ...subs].sort(byOrder);
+    const count = tabs.length + subs.reduce((n, s) => n + (s.kind === 'folder' ? s.count : 0), 0);
+    return { kind: 'folder', folder: f, tabs, items, count, order: f.order };
+  };
   const section = (pinned: boolean): SectionItem[] => {
     const items: (SectionItem & { order: number })[] = [];
+    const seen = new Set<string>();
     for (const f of folders) {
       if (f.pinned !== pinned) continue;
-      items.push({ kind: 'folder', folder: f, tabs: inSpace.filter((t) => t.folderId === f.id).sort(byOrder), order: f.order });
+      if (f.parentId && folderIds.has(f.parentId)) continue;
+      items.push(folderItem(f, seen));
     }
     for (const t of inSpace) {
       if (t.pinned !== pinned) continue;
@@ -131,10 +142,11 @@ export function buildSidebar(state: Pick<UIState, 'tabs' | 'folders' | 'activeSp
   const pinned = section(true);
   const today = section(false);
   const flat: Tab[] = [...favorites];
-  for (const it of [...pinned, ...today]) {
+  const walk = (it: SectionItem) => {
     if (it.kind === 'tab') flat.push(it.tab);
-    else if (!it.folder.collapsed) flat.push(...it.tabs);
-  }
+    else if (!it.folder.collapsed) it.items.forEach(walk);
+  };
+  [...pinned, ...today].forEach(walk);
   return { favorites, pinned, today, flat };
 }
 
@@ -168,4 +180,13 @@ export function share<T>(prev: T, next: T): T {
     if (v !== p[k]) same = false;
   }
   return (same ? prev : out) as T;
+}
+
+/** Folder colours: a folder without one gets a steady colour from its name. */
+export const FOLDER_COLORS = ['#3cb99a', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#ef4444', '#14b8a6', '#64748b'];
+export function folderColor(f: { color?: string; name: string; id: string }): string {
+  if (f.color) return f.color;
+  let h = 0;
+  for (const ch of f.name || f.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return FOLDER_COLORS[h % FOLDER_COLORS.length];
 }

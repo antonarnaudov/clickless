@@ -125,8 +125,11 @@ export class Clickless implements Browser {
   ) {
     this.control = { running: false, port: null, url: null, mcpUrl: null, cdpPort: state.settings.control.cdpPort, discoveryFile };
     for (const t of state.tabs) {
+      const saved = t.pinned || t.favorite;
       this.tabs.set(t.id, {
         ...t,
+        savedUrl: saved ? (t.savedUrl ?? t.url) : undefined,
+        savedTitle: saved ? (t.savedTitle ?? t.title) : undefined,
         favorite: !!t.favorite,
         pinned: !!t.pinned,
         loading: false,
@@ -612,6 +615,8 @@ export class Clickless implements Browser {
         spaceId: t.spaceId,
         url: t.url,
         title: t.title,
+        savedUrl: t.savedUrl,
+        savedTitle: t.savedTitle,
         favicon: t.favicon,
         favorite: t.favorite,
         pinned: t.pinned,
@@ -724,14 +729,15 @@ export class Clickless implements Browser {
     const section = (pinned: boolean) => {
       const tabs = this.spaceTabs(spaceId).filter((t) => t.pinned === pinned);
       const folders = this.state.folders.filter((f) => f.spaceId === spaceId && f.pinned === pinned);
-      const items: { order: number; tabs: Tab[] }[] = [
-        ...tabs.filter((t) => !t.folderId || !folders.some((f) => f.id === t.folderId)).map((t) => ({ order: t.order, tabs: [t] })),
-        ...folders.map((f) => ({
-          order: f.order,
-          tabs: f.collapsed ? [] : tabs.filter((t) => t.folderId === f.id).sort((a, b) => a.order - b.order),
-        })),
-      ];
-      return items.sort((a, b) => a.order - b.order).flatMap((i) => i.tabs);
+      const ids = new Set(folders.map((f) => f.id));
+      const inside = (parent: string | undefined): Tab[] => {
+        const items: { order: number; tabs: () => Tab[] }[] = [
+          ...tabs.filter((t) => (parent ? t.folderId === parent : !t.folderId || !ids.has(t.folderId))).map((t) => ({ order: t.order, tabs: () => [t] })),
+          ...folders.filter((f) => (parent ? f.parentId === parent : !f.parentId || !ids.has(f.parentId))).map((f) => ({ order: f.order, tabs: () => (f.collapsed ? [] : inside(f.id)) })),
+        ];
+        return items.sort((a, b) => a.order - b.order).flatMap((i) => i.tabs());
+      };
+      return inside(undefined);
     };
     return [...favs, ...section(true), ...section(false)];
   }
@@ -745,7 +751,7 @@ export class Clickless implements Browser {
   private minOrder(spaceId: string, pinned: boolean, folderId?: string): number {
     let min = 0;
     for (const t of this.tabs.values()) if (t.spaceId === spaceId && t.pinned === pinned && !t.favorite && (t.folderId ?? undefined) === folderId) min = Math.min(min, t.order);
-    for (const f of this.state.folders) if (!folderId && f.spaceId === spaceId && f.pinned === pinned) min = Math.min(min, f.order);
+    for (const f of this.state.folders) if (f.spaceId === spaceId && f.pinned === pinned && (f.parentId ?? undefined) === folderId) min = Math.min(min, f.order);
     return min;
   }
 
@@ -786,6 +792,10 @@ export class Clickless implements Browser {
       zoom: 0,
       internal: url.startsWith(`${APP_SCHEME}:`),
     };
+    if (pinned) {
+      t.savedUrl = url;
+      t.savedTitle = t.title;
+    }
     this.tabs.set(id, t);
     this.save();
     return t;
@@ -810,9 +820,8 @@ export class Clickless implements Browser {
     const tabs = Array.from(this.tabs.values())
       .filter((t) => !t.favorite && t.spaceId === spaceId && t.pinned === pinned && (folderId ? t.folderId === folderId : !t.folderId))
       .map((t) => ({ id: t.id, order: t.order, set: (o: number) => (t.order = o) }));
-    if (folderId) return tabs;
     const folders = this.state.folders
-      .filter((f) => f.spaceId === spaceId && f.pinned === pinned)
+      .filter((f) => f.spaceId === spaceId && f.pinned === pinned && (f.parentId ?? undefined) === (folderId ?? undefined))
       .map((f) => ({ id: f.id, order: f.order, set: (o: number) => (f.order = o) }));
     return [...tabs, ...folders];
   }
@@ -820,6 +829,7 @@ export class Clickless implements Browser {
   moveTab(tabId: TabId, to: { spaceId?: string; pinned?: boolean; favorite?: boolean; folderId?: string | null; beforeId?: string | null }) {
     const t = this.tabs.get(tabId);
     if (!t) return;
+    const wasSaved = t.pinned || t.favorite;
     if (to.favorite !== undefined) t.favorite = to.favorite;
     if (to.spaceId && this.state.spaces.some((s) => s.id === to.spaceId)) t.spaceId = to.spaceId;
     if (to.folderId !== undefined) {
@@ -835,6 +845,7 @@ export class Clickless implements Browser {
       t.pinned = false;
       t.folderId = undefined;
     }
+    this.rememberSaved(t, wasSaved);
     this.place(this.containerItems(t.spaceId, t.pinned, t.folderId, t.favorite), tabId, to.beforeId);
     if (t.spaceId !== this.state.activeSpaceId && this.activeTabId() === tabId && !t.favorite) {
       delete this.state.activeTabBySpace[this.state.activeSpaceId];
@@ -848,27 +859,52 @@ export class Clickless implements Browser {
   moveFolder(folderId: string, to: { pinned?: boolean; beforeId?: string | null }) {
     const f = this.state.folders.find((x) => x.id === folderId);
     if (!f) return;
-    if (to.pinned !== undefined && to.pinned !== f.pinned) {
-      f.pinned = to.pinned;
-      for (const t of this.tabs.values()) if (t.folderId === f.id) t.pinned = f.pinned;
-    }
+    if (to.pinned !== undefined && to.pinned !== f.pinned) this.setFolderPinned(f, to.pinned);
+    f.parentId = undefined;
     this.place(this.containerItems(f.spaceId, f.pinned, undefined, false), folderId, to.beforeId);
     this.save();
     this.pushState();
   }
 
-  createFolder(opts: { spaceId?: string; name?: string; pinned?: boolean; tabIds?: TabId[] }): string {
-    const spaceId = opts.spaceId ?? this.state.activeSpaceId;
-    const pinned = opts.pinned ?? true;
-    const f: Folder = { id: uid('f'), spaceId, name: opts.name || 'New Folder', collapsed: false, pinned, order: this.minOrder(spaceId, pinned) - 1 };
+  /** A folder and everything inside it (tabs, sub-folders) moves between Pinned and Today together. */
+  private setFolderPinned(f: Folder, pinned: boolean) {
+    f.pinned = pinned;
+    for (const t of this.tabs.values()) if (t.folderId === f.id) t.pinned = pinned;
+    for (const sub of this.state.folders) if (sub.parentId === f.id) this.setFolderPinned(sub, pinned);
+  }
+
+  /** Puts a folder inside another one (or back at the top level with null). */
+  nestFolder(folderId: string, parentId: string | null) {
+    const f = this.state.folders.find((x) => x.id === folderId);
+    if (!f) return;
+    const parent = parentId ? this.state.folders.find((x) => x.id === parentId) : undefined;
+    // never inside itself or one of its own sub-folders
+    for (let p = parent; p; p = p.parentId ? this.state.folders.find((x) => x.id === p!.parentId) : undefined) if (p.id === f.id) return;
+    f.parentId = parent?.id;
+    if (parent) {
+      f.spaceId = parent.spaceId;
+      if (f.pinned !== parent.pinned) this.setFolderPinned(f, parent.pinned);
+    }
+    f.order = this.minOrder(f.spaceId, f.pinned, f.parentId) - 1;
+    this.save();
+    this.pushState();
+  }
+
+  createFolder(opts: { spaceId?: string; name?: string; pinned?: boolean; tabIds?: TabId[]; parentId?: string }): string {
+    const parent = opts.parentId ? this.state.folders.find((x) => x.id === opts.parentId) : undefined;
+    const spaceId = parent?.spaceId ?? opts.spaceId ?? this.state.activeSpaceId;
+    const pinned = parent?.pinned ?? opts.pinned ?? true;
+    const f: Folder = { id: uid('f'), spaceId, name: opts.name || 'New Folder', collapsed: false, pinned, order: this.minOrder(spaceId, pinned, parent?.id) - 1, parentId: parent?.id };
     this.state.folders.push(f);
     for (const id of opts.tabIds ?? []) {
       const t = this.tabs.get(id);
       if (!t) continue;
       t.folderId = f.id;
+      const wasSaved = t.pinned || t.favorite;
       t.pinned = pinned;
       t.spaceId = spaceId;
       t.favorite = false;
+      this.rememberSaved(t, wasSaved);
     }
     this.save();
     this.pushState();
@@ -880,11 +916,15 @@ export class Clickless implements Browser {
     if (!f) return;
     for (const t of Array.from(this.tabs.values())) {
       if (t.folderId !== folderId) continue;
-      if (closeTabs) this.closeTab(t.id);
+      if (closeTabs) this.closeTab(t.id, { remove: true });
       else {
-        t.folderId = undefined;
+        t.folderId = f.parentId;
         t.order = f.order + t.order / 1000;
       }
+    }
+    for (const sub of this.state.folders) if (sub.parentId === folderId) {
+      if (closeTabs) this.deleteFolder(sub.id, true);
+      else sub.parentId = f.parentId;
     }
     this.state.folders = this.state.folders.filter((x) => x.id !== folderId);
     this.save();
@@ -902,7 +942,7 @@ export class Clickless implements Browser {
 
   deleteSpace(spaceId: string) {
     if (this.state.spaces.length <= 1) return;
-    for (const t of Array.from(this.tabs.values())) if (t.spaceId === spaceId && !t.favorite) this.closeTab(t.id, { archive: true });
+    for (const t of Array.from(this.tabs.values())) if (t.spaceId === spaceId && !t.favorite) this.closeTab(t.id, { archive: true, remove: true });
     this.state.folders = this.state.folders.filter((f) => f.spaceId !== spaceId);
     this.state.spaces = this.state.spaces.filter((s) => s.id !== spaceId);
     delete this.state.activeTabBySpace[spaceId];
@@ -999,10 +1039,15 @@ export class Clickless implements Browser {
     this.pushState();
   }
 
-  private pickNextActive(closingId?: TabId) {
+  private pickNextActive(closingId?: TabId, unloaded = false) {
     const order = this.sidebarOrder().filter((t) => !t.favorite);
     const idx = closingId ? order.findIndex((t) => t.id === closingId) : -1;
-    const candidates = order.filter((t) => t.id !== closingId);
+    let candidates = order.filter((t) => t.id !== closingId);
+    // after unloading a saved tab, move to a tab that's open rather than waking another saved one
+    if (unloaded) {
+      const open = candidates.filter((t) => !t.asleep);
+      if (open.length) candidates = open;
+    }
     const opener = closingId ? this.openerOf.get(closingId) : undefined;
     const next = (opener && this.tabs.has(opener) && opener) || candidates[Math.max(0, Math.min(idx, candidates.length - 1))]?.id;
     if (next) this.activateTab(next);
@@ -1014,9 +1059,43 @@ export class Clickless implements Browser {
     }
   }
 
-  closeTab(id: TabId, opts: { archive?: boolean } = {}) {
+  /** A tab became pinned or a favourite (it remembers this address), or stopped being one. */
+  private rememberSaved(t: Tab, wasSaved: boolean) {
+    const saved = t.pinned || t.favorite;
+    if (saved && !wasSaved) {
+      t.savedUrl = t.url;
+      t.savedTitle = t.title;
+    } else if (!saved) {
+      t.savedUrl = t.savedTitle = undefined;
+    }
+  }
+
+  /** Arc-style close for pinned tabs, favourites and tabs in folders: the page unloads, the tab stays where it is and goes back to its saved address. */
+  unloadTab(id: TabId) {
     const t = this.tabs.get(id);
     if (!t) return;
+    const wasActive = this.activeTabId() === id;
+    if (t.savedUrl && t.savedUrl !== t.url) {
+      t.url = t.savedUrl;
+      if (t.savedTitle) t.title = t.savedTitle;
+    }
+    this.sleepTab(id);
+    this.live.delete(id);
+    const raw = (this.state as any).split as { tabIds?: TabId[]; sizes?: number[] } | null;
+    if (raw?.tabIds?.includes(id)) {
+      const i = raw.tabIds.indexOf(id);
+      this.writeSplit(raw.tabIds.filter((x) => x !== id), raw.sizes?.length === raw.tabIds.length ? raw.sizes.filter((_, k) => k !== i) : undefined);
+    }
+    if (wasActive) this.pickNextActive(id, true);
+    this.save();
+    this.pushState();
+  }
+
+  /** Closes a tab. Saved tabs (pinned, favourites, in folders) only unload unless `remove` is set: deleting one is an explicit action. */
+  closeTab(id: TabId, opts: { archive?: boolean; remove?: boolean } = {}) {
+    const t = this.tabs.get(id);
+    if (!t) return;
+    if ((t.pinned || t.favorite) && !opts.remove) return this.unloadTab(id);
     const wasActive = this.activeTabId() === id;
     this.tabs.delete(id);
     const rec = this.persistedState().tabs.find((x) => x.id === id) ?? ({ ...t } as PersistedTab);
@@ -1125,7 +1204,10 @@ export class Clickless implements Browser {
     if (patch.favorite !== undefined || patch.pinned !== undefined) {
       this.moveTab(id, { favorite: patch.favorite, pinned: patch.pinned, folderId: patch.pinned === false ? null : undefined });
     }
-    if (patch.title !== undefined) t.title = patch.title;
+    if (patch.title !== undefined) {
+      t.title = patch.title;
+      if (t.pinned || t.favorite) t.savedTitle = patch.title;
+    }
     if (patch.muted !== undefined) {
       t.muted = patch.muted;
       this.views.get(id)?.webContents.setAudioMuted(patch.muted);
@@ -1655,28 +1737,23 @@ export class Clickless implements Browser {
         const t = this.newTabRecord(n.url, { spaceId, pinned, folderId });
         seen.set(k, t);
         t.title = n.title.slice(0, 300);
+        if (pinned) t.savedTitle = t.title;
         t.favicon = n.favicon;
         t.order = order;
         row.tabs++;
       };
-      const folderFor = (name: string, pinned: boolean, order: number): Folder => {
-        const existing = this.state.folders.find((f) => f.spaceId === spaceId && f.pinned === pinned && f.name === name);
+      const folderFor = (name: string, pinned: boolean, order: number, parentId?: string): Folder => {
+        const existing = this.state.folders.find((f) => f.spaceId === spaceId && f.pinned === pinned && f.name === name && (f.parentId ?? undefined) === parentId);
         if (existing) return existing;
-        const f: Folder = { id: uid('f'), spaceId, name: name.slice(0, 120), collapsed: true, pinned, order };
+        const f: Folder = { id: uid('f'), spaceId, name: name.slice(0, 120), collapsed: true, pinned, order, parentId };
         this.state.folders.push(f);
         row.folders++;
         return f;
       };
-      /** Folders are one level deep in Clickless: nested folders become “Parent / Child”, placed right after their parent. */
-      const addFolder = (n: Extract<ImportNode, { kind: 'folder' }>, pinned: boolean, order: number, prefix = '') => {
-        const name = prefix ? `${prefix} / ${n.name}` : n.name;
-        const tabs = n.children.filter((c) => c.kind === 'tab') as Extract<ImportNode, { kind: 'tab' }>[];
-        const subs = n.children.filter((c) => c.kind === 'folder') as Extract<ImportNode, { kind: 'folder' }>[];
-        if (tabs.length) {
-          const f = folderFor(name, pinned, order);
-          tabs.forEach((t, i) => addTab(t, pinned, i, f.id));
-        }
-        subs.forEach((sub, i) => addFolder(sub, pinned, order + (i + 1) / (subs.length + 1) / 10 ** (prefix.split(' / ').length), name));
+      /** Folders keep their nesting: sub-folders sit inside their parent, after its tabs. */
+      const addFolder = (n: Extract<ImportNode, { kind: 'folder' }>, pinned: boolean, order: number, parentId?: string) => {
+        const f = folderFor(n.name, pinned, order, parentId);
+        n.children.forEach((c, i) => (c.kind === 'tab' ? addTab(c, pinned, i, f.id) : addFolder(c, pinned, i, f.id)));
       };
       const addSection = (nodes: ImportNode[], pinned: boolean) => {
         const base = this.maxOrder((t) => t.spaceId === spaceId && t.pinned === pinned && !t.favorite && !t.folderId, this.state.folders.filter((f) => f.spaceId === spaceId && f.pinned === pinned)) + 1;
@@ -1695,6 +1772,8 @@ export class Clickless implements Browser {
         t.title = n.title.slice(0, 300);
         t.favicon = n.favicon;
         t.favorite = true;
+        t.savedUrl = t.url;
+        t.savedTitle = t.title;
         t.order = favOrder++;
         report.favorites++;
       }

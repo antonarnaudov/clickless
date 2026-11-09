@@ -26,7 +26,10 @@ export type Command =
   /** Opens a tab. `url` may be search terms. Returns the new TabId. */
   | { type: 'tab.new'; url?: string; spaceId?: string; background?: boolean; pinned?: boolean; folderId?: string }
   | { type: 'tab.activate'; tabId: TabId }
+  /** Closes a tab. Pinned tabs, favourites and tabs in folders only unload (they stay saved); use tab.delete to remove one. */
   | { type: 'tab.close'; tabId: TabId }
+  /** Removes a tab for good, including pinned tabs and favourites (it can still be reopened with ⇧⌘T). */
+  | { type: 'tab.delete'; tabId: TabId }
   /** Navigate to a URL or search terms. */
   | { type: 'tab.navigate'; tabId?: TabId; input: string }
   | { type: 'tab.back'; tabId?: TabId }
@@ -56,8 +59,10 @@ export type Command =
   | { type: 'tabs.activateIndex'; index: number }
   // ----- folders -----
   /** Returns the new folder id. */
-  | { type: 'folder.create'; spaceId?: string; name?: string; pinned?: boolean; tabIds?: TabId[] }
-  | { type: 'folder.update'; folderId: string; patch: { name?: string; collapsed?: boolean } }
+  | { type: 'folder.create'; spaceId?: string; name?: string; pinned?: boolean; tabIds?: TabId[]; parentId?: string }
+  | { type: 'folder.update'; folderId: string; patch: { name?: string; collapsed?: boolean; color?: string | null; icon?: string | null } }
+  /** Moves a folder into another folder (parentId) or back to the top level (null). */
+  | { type: 'folder.nest'; folderId: string; parentId: string | null }
   | { type: 'folder.delete'; folderId: string; closeTabs?: boolean }
   | { type: 'folder.move'; folderId: string; pinned?: boolean; beforeId?: string | null }
   // ----- spaces -----

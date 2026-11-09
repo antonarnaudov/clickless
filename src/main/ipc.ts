@@ -87,6 +87,8 @@ export function registerIpc(app: IpcApp) {
         return b.activateTab(c.tabId);
       case 'tab.close':
         return b.closeTab(c.tabId);
+      case 'tab.delete':
+        return b.closeTab(c.tabId, { remove: true });
       case 'tab.navigate': {
         const id = c.tabId ?? b.activeTabId();
         if (!id) return (await b.openTab(c.input)).id;
@@ -137,7 +139,12 @@ export function registerIpc(app: IpcApp) {
         return b.createFolder(c);
       case 'folder.update': {
         const f = b.state.folders.find((x) => x.id === c.folderId);
-        if (f) Object.assign(f, c.patch);
+        if (f) {
+          const { color, icon, ...rest } = c.patch;
+          Object.assign(f, rest);
+          if (color !== undefined) f.color = color || undefined;
+          if (icon !== undefined) f.icon = icon || undefined;
+        }
         b.save();
         b.layout();
         return b.pushState();
@@ -146,6 +153,8 @@ export function registerIpc(app: IpcApp) {
         return b.deleteFolder(c.folderId, c.closeTabs);
       case 'folder.move':
         return b.moveFolder(c.folderId, c);
+      case 'folder.nest':
+        return b.nestFolder(c.folderId, c.parentId);
       // spaces
       case 'space.create':
         return b.createSpace(c);

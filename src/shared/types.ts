@@ -17,6 +17,10 @@ export interface Space {
   icon: string;
   /** Accent colour (hex). The UI derives the sidebar gradient from it. */
   color: string;
+  /** The pinned section is folded away in the sidebar. */
+  collapsed?: boolean;
+  /** The Today section is folded away. */
+  todayCollapsed?: boolean;
 }
 
 export interface Folder {
@@ -27,6 +31,12 @@ export interface Folder {
   /** Folders live in the pinned section (true) or in Today (false). */
   pinned: boolean;
   order: number;
+  /** Set for a folder inside another folder. */
+  parentId?: string;
+  /** Folder colour (hex); without one a colour is picked from its name. */
+  color?: string;
+  /** An emoji shown instead of the folder icon. */
+  icon?: string;
 }
 
 export interface Tab {
@@ -34,6 +44,9 @@ export interface Tab {
   spaceId: string;
   url: string;
   title: string;
+  /** Pinned tabs and favourites remember where they were saved: closing one unloads it and returns here. */
+  savedUrl?: string;
+  savedTitle?: string;
   favicon?: string;
   /** Favourites are shown as tiles at the top of the sidebar in every space. */
   favorite: boolean;

@@ -16,7 +16,7 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowLeft, ArrowRight, ChevronRight, Columns2, Copy, CopyPlus, Download, Ellipsis, Folder as FolderIcon, FolderInput, FolderOpen, FolderPlus, Globe, Layers, Lock, PanelLeft, Pause, Pencil, Pin, PinOff, Play, Plug, Plus, RotateCw, Settings as SettingsIcon, Sparkles, Square, SquareArrowOutUpRight, Star, StarOff, Trash2, Volume2, VolumeX, Wand2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Columns2, Copy, CopyPlus, Download, Ellipsis, Folder as FolderIcon, FolderInput, FolderOpen, FolderPlus, Globe, Layers, Lock, PanelLeft, Pause, Pencil, Pin, PinOff, Play, Plug, Plus, RotateCw, Settings as SettingsIcon, Sparkles, Square, SquareArrowOutUpRight, Star, StarOff, Trash2, Volume2, VolumeX, Wand2, X, type LucideIcon, Minus } from 'lucide-react';
 import type { Download as DownloadT, Folder, Space, Tab, UIState } from '../../shared/types';
 import { cmd } from '../common/api';
 import { splitDrag } from './dnd';
@@ -24,7 +24,7 @@ import { BrandIcon } from '../common/BrandIcon';
 import { agentClient } from '../../shared/agents';
 import type { AgentProfileStatus } from '../../shared/types';
 import { Favicon } from '../common/Favicon';
-import { buildSidebar, cx, displayUrl, formatBytes, hostOf, isSecure, type SidebarModel } from '../common/util';
+import { buildSidebar, cx, displayUrl, formatBytes, hostOf, isSecure, type SidebarModel, folderColor, FOLDER_COLORS, type SectionItem } from '../common/util';
 import { useContextMenu, type MenuItem } from './ContextMenu';
 
 // ---------------------------------------------------------------------------
@@ -41,27 +41,45 @@ interface SbCtx {
   clearSelection(): void;
   /** Tabs that are panes of the split view (shown with a small split mark). */
   splitIds: string;
+  /** Tabs inside each folder, sub-folders included. */
+  counts: Map<string, number>;
 }
 const Ctx = createContext<SbCtx>(null!);
 
 type Layout = Record<string, string[]>;
 const idOf = (key: string) => key.slice(key.indexOf(':') + 1);
 
+const keyOf = (it: SectionItem) => (it.kind === 'tab' ? `tab:${it.tab.id}` : `folder:${it.folder.id}`);
+
 function baseLayout(m: SidebarModel): Layout {
   const L: Layout = { fav: m.favorites.map((t) => `tab:${t.id}`), pinned: [], today: [] };
+  const addFolder = (it: SectionItem) => {
+    if (it.kind !== 'folder') return;
+    L[`fold:${it.folder.id}`] = it.folder.collapsed ? [] : it.items.map(keyOf);
+    it.items.forEach(addFolder);
+  };
   for (const [key, items] of [
     ['pinned', m.pinned],
     ['today', m.today],
   ] as const) {
     for (const it of items) {
-      if (it.kind === 'tab') L[key].push(`tab:${it.tab.id}`);
-      else {
-        L[key].push(`folder:${it.folder.id}`);
-        L[`fold:${it.folder.id}`] = it.folder.collapsed ? [] : it.tabs.map((t) => `tab:${t.id}`);
-      }
+      L[key].push(keyOf(it));
+      addFolder(it);
     }
   }
   return L;
+}
+
+/** Tabs inside each folder, sub-folders included. */
+function folderCounts(m: SidebarModel): Map<string, number> {
+  const out = new Map<string, number>();
+  const walk = (it: SectionItem) => {
+    if (it.kind !== 'folder') return;
+    out.set(it.folder.id, it.count);
+    it.items.forEach(walk);
+  };
+  [...m.pinned, ...m.today].forEach(walk);
+  return out;
 }
 
 function findContainer(L: Layout, id: string): string | null {
@@ -242,7 +260,8 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
   const getSelection = useCallback(() => selRef.current, []);
   const clearSelection = useCallback(() => setSelected(new Set()), []);
   const splitIds = state.split?.tabIds.join(',') ?? '';
-  const ctx = useMemo(() => ({ renamingId, setRenaming, getState, onRowClick, getSelection, clearSelection, splitIds }), [renamingId, getState, onRowClick, getSelection, clearSelection, splitIds]);
+  const counts = useMemo(() => folderCounts(model), [model]);
+  const ctx = useMemo(() => ({ renamingId, setRenaming, getState, onRowClick, getSelection, clearSelection, splitIds, counts }), [renamingId, getState, onRowClick, getSelection, clearSelection, splitIds, counts]);
   const agentTab = state.agent.active ? state.agent.tabId : null;
   const dragTab = drag && drag.id.startsWith('tab:') ? tabsById.get(idOf(drag.id)) : undefined;
   const dragFolder = drag && drag.id.startsWith('folder:') ? foldersById.get(idOf(drag.id)) : undefined;
@@ -273,6 +292,8 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
               <PanelLeft size={16} strokeWidth={1.8} />
             </button>
             <div className="grow" />
+            {!state.settings.appearance.compactUrl && (
+              <>
             <button className="icon-btn" title="Back (⌘[)" disabled={!active?.canGoBack} onClick={() => cmd({ type: 'tab.back' })}>
               <ArrowLeft size={16} strokeWidth={1.9} />
             </button>
@@ -287,7 +308,9 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
             >
               {active?.loading ? <X size={16} strokeWidth={1.9} /> : <RotateCw size={15} strokeWidth={1.9} />}
             </button>
-          </div>
+                        </>
+            )}
+</div>
 
           {state.profile.kind === 'agent' && <AgentBadge id={state.profile.id} name={state.profile.name} />}
           {showUrl && <UrlField tab={active} />}
@@ -305,11 +328,11 @@ export const Sidebar = memo(function Sidebar({ state, width, onToast }: { state:
                 exit={{ opacity: 0, x: dir * -28 }}
                 transition={{ type: 'spring', stiffness: 420, damping: 38, mass: 0.7 }}
               >
-                {space && <SpaceHead space={space} />}
-                <SectionList id="pinned" ids={layout.pinned} layout={layout} tabsById={tabsById} foldersById={foldersById} into={drag?.into ?? null} activeId={state.activeTabId} agentTab={agentTab} selected={selected} />
-                <TodayDivider spaceId={state.activeSpaceId} />
+                {space && <SpaceHead space={space} count={layout.pinned.length} />}
+                {!space?.collapsed && <SectionList id="pinned" ids={layout.pinned} layout={layout} tabsById={tabsById} foldersById={foldersById} into={drag?.into ?? null} activeId={state.activeTabId} agentTab={agentTab} selected={selected} />}
+                <TodayDivider spaceId={state.activeSpaceId} collapsed={!!space?.todayCollapsed} count={layout.today.length} />
                 <NewTabRow />
-                <SectionList id="today" ids={layout.today} layout={layout} tabsById={tabsById} foldersById={foldersById} into={drag?.into ?? null} activeId={state.activeTabId} agentTab={agentTab} selected={selected} />
+                {!space?.todayCollapsed && <SectionList id="today" ids={layout.today} layout={layout} tabsById={tabsById} foldersById={foldersById} into={drag?.into ?? null} activeId={state.activeTabId} agentTab={agentTab} selected={selected} />}
                 <div style={{ height: 40 }} />
               </motion.div>
             </AnimatePresence>
@@ -406,7 +429,7 @@ const FavTile = memo(function FavTile({ tab, active, agentHere }: { tab: Tab; ac
       {...s.attributes}
       {...s.listeners}
       style={{ transform: CSS.Translate.toString(s.transform), transition: s.transition }}
-      className={cx('fav-tile', active && 'active', tab.asleep && 'asleep', s.isDragging && 'dragging-ghost')}
+      className={cx('fav-tile', active && 'active', !tab.asleep && !active && 'awake', s.isDragging && 'dragging-ghost')}
       title={`${tab.title}\n${tab.url}`}
       onClick={() => cmd({ type: 'tab.activate', tabId: tab.id })}
       onAuxClick={(e) => e.button === 1 && cmd({ type: 'tab.close', tabId: tab.id })}
@@ -421,28 +444,35 @@ const FavTile = memo(function FavTile({ tab, active, agentHere }: { tab: Tab; ac
 
 // ----- space header + sections -----
 
-function SpaceHead({ space }: { space: Space }) {
+function SpaceHead({ space, count }: { space: Space; count: number }) {
   const openMenu = useContextMenu();
   const items = (): MenuItem[] => [
     { label: 'Edit space…', icon: Pencil, onSelect: () => cmd({ type: 'ui.overlay', overlay: { kind: 'space', spaceId: space.id } }) },
     { label: 'New space…', icon: Plus, onSelect: () => cmd({ type: 'ui.overlay', overlay: { kind: 'space' } }) },
     { label: 'New folder', icon: FolderPlus, onSelect: () => cmd({ type: 'folder.create', spaceId: space.id, pinned: true }) },
+    { label: space.collapsed ? 'Show pinned tabs' : 'Fold away pinned tabs', icon: space.collapsed ? FolderOpen : FolderIcon, onSelect: () => cmd({ type: 'space.update', spaceId: space.id, patch: { collapsed: !space.collapsed } }) },
     { label: 'Tidy tabs with AI', icon: Wand2, onSelect: () => cmd({ type: 'organize.start', spaceId: space.id }) },
     { sep: true },
     { label: 'Delete space', icon: Trash2, danger: true, onSelect: () => cmd({ type: 'space.delete', spaceId: space.id }) },
   ];
+  const toggle = () => cmd({ type: 'space.update', spaceId: space.id, patch: { collapsed: !space.collapsed } });
   return (
     <div
-      className="space-head"
+      className={cx('space-head', space.collapsed && 'collapsed')}
+      role="button"
+      title={space.collapsed ? 'Show pinned tabs and folders' : 'Fold away pinned tabs and folders'}
+      onClick={toggle}
       onDoubleClick={() => cmd({ type: 'ui.overlay', overlay: { kind: 'space', spaceId: space.id } })}
       onContextMenu={(e) => {
         e.preventDefault();
         openMenu(e, items());
       }}
     >
+      <ChevronRight className={cx('chev', !space.collapsed && 'open')} size={12} strokeWidth={2.4} />
       <span className="emoji">{space.icon}</span>
       <span className="name truncate">{space.name}</span>
-      <button className="icon-btn sm" title="Space options" onClick={(e) => openMenu(e, items())}>
+      {space.collapsed && count > 0 && <span className="count">{count}</span>}
+      <button className="icon-btn sm" title="Space options" onClick={(e) => (e.stopPropagation(), openMenu(e, items()))}>
         <Ellipsis size={15} />
       </button>
     </div>
@@ -478,9 +508,7 @@ function SectionList({
           if (key.startsWith('folder:')) {
             const f = foldersById.get(idOf(key));
             if (!f) return null;
-            let count = 0;
-            for (const t of tabsById.values()) if (t.folderId === f.id) count++;
-            return <FolderItem key={key} folder={f} kids={layout[`fold:${f.id}`] ?? []} tabsById={tabsById} into={into === f.id} activeId={activeId} agentTab={agentTab} count={count} selected={selected} />;
+            return <FolderItem key={key} folder={f} kids={layout[`fold:${f.id}`] ?? []} layout={layout} tabsById={tabsById} foldersById={foldersById} into={into} activeId={activeId} agentTab={agentTab} selected={selected} />;
           }
           const t = tabsById.get(idOf(key));
           return t ? <TabRow key={key} tab={t} active={t.id === activeId} agentHere={t.id === agentTab} selected={selected.has(t.id)} /> : null;
@@ -490,10 +518,12 @@ function SectionList({
   );
 }
 
-function TodayDivider({ spaceId }: { spaceId: string }) {
+function TodayDivider({ spaceId, collapsed, count }: { spaceId: string; collapsed: boolean; count: number }) {
   return (
-    <div className="divider">
-      <span className="label">Today</span>
+    <div className={cx('divider', collapsed && 'collapsed')}>
+      <button className="label" title={collapsed ? 'Show Today' : 'Fold away Today'} onClick={() => cmd({ type: 'space.update', spaceId, patch: { todayCollapsed: !collapsed } })}>
+        <ChevronRight className={cx('chev', !collapsed && 'open')} size={11} strokeWidth={2.4} /> Today{collapsed && count > 0 ? ` · ${count}` : ''}
+      </button>
       <span className="line" />
       <span className="acts">
         <button title="Group and clean up tabs with AI" onClick={() => cmd({ type: 'organize.start', spaceId })}>
@@ -562,7 +592,8 @@ function useTabMenu(tab: Tab) {
             .map((s) => ({ label: `${s.icon}  ${s.name}`, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.move', tabId: id, spaceId: s.id, favorite: false, pinned: false, folderId: null, beforeId: null }))) })),
         },
         { sep: true },
-        { label: `Close ${n} tabs`, icon: X, danger: true, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.close', tabId: id }))) },
+        { label: `Close ${n} tabs (saved ones unload)`, icon: X, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.close', tabId: id }))) },
+        { label: `Delete ${n} tabs`, icon: Trash2, danger: true, onSelect: after(() => ids.forEach((id) => cmd({ type: 'tab.delete', tabId: id }))) },
       ]);
       return;
     }
@@ -604,7 +635,10 @@ function useTabMenu(tab: Tab) {
         children: otherSpaces.map((s) => ({ label: `${s.icon}  ${s.name}`, onSelect: () => cmd({ type: 'tab.move', tabId: tab.id, spaceId: s.id, favorite: false, pinned: false, folderId: null, beforeId: null }) })),
       },
       { sep: true },
-      { label: 'Close', icon: X, danger: true, hint: '⌘W', onSelect: () => cmd({ type: 'tab.close', tabId: tab.id }) },
+      tab.pinned || tab.favorite
+        ? !tab.asleep && { label: 'Unload', icon: Minus, hint: '⌘W', onSelect: () => cmd({ type: 'tab.close', tabId: tab.id }) }
+        : { label: 'Close', icon: X, danger: true, hint: '⌘W', onSelect: () => cmd({ type: 'tab.close', tabId: tab.id }) },
+      (tab.pinned || tab.favorite) && { label: 'Delete tab', icon: Trash2, danger: true, onSelect: () => cmd({ type: 'tab.delete', tabId: tab.id }) },
     ].filter(Boolean) as MenuItem[];
     openMenu(e, items);
   };
@@ -623,7 +657,7 @@ const TabRow = memo(function TabRow({ tab, active, agentHere, selected }: { tab:
       {...s.listeners}
       role="button"
       style={{ transform: CSS.Translate.toString(s.transform), transition: s.transition }}
-      className={cx('row', active && 'active', selected && 'selected', tab.asleep && 'asleep', agentHere && 'agent-here', s.isDragging && 'dragging-ghost')}
+      className={cx('row', active && 'active', selected && 'selected', !tab.asleep && !active && 'awake', agentHere && 'agent-here', s.isDragging && 'dragging-ghost')}
       title={tab.url}
       aria-selected={selected || active}
       onClick={(e) => !renaming && onRowClick(tab.id, e)}
@@ -662,17 +696,34 @@ const TabRow = memo(function TabRow({ tab, active, agentHere, selected }: { tab:
             {tab.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
           </button>
         )}
-        <button
-          className="icon-btn sm close"
-          title="Close tab"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            cmd({ type: 'tab.close', tabId: tab.id });
-          }}
-        >
-          <X size={13} strokeWidth={2} />
-        </button>
+        {tab.pinned || tab.favorite ? (
+          // saved tabs: unload the page, keep the tab (delete it from the menu)
+          !tab.asleep && (
+            <button
+              className="icon-btn sm close"
+              title="Unload (the tab stays saved) · ⌘W"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                cmd({ type: 'tab.close', tabId: tab.id });
+              }}
+            >
+              <Minus size={13} strokeWidth={2.2} />
+            </button>
+          )
+        ) : (
+          <button
+            className="icon-btn sm close"
+            title="Close tab · ⌘W"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              cmd({ type: 'tab.close', tabId: tab.id });
+            }}
+          >
+            <X size={13} strokeWidth={2} />
+          </button>
+        )}
       </span>
     </div>
   );
@@ -705,43 +756,78 @@ function RenameInput({ value, onDone }: { value: string; onDone(v: string | null
 
 // ----- folders -----
 
+const FOLDER_EMOJI = ['📁', '💼', '🏠', '💡', '🛠', '📚', '🎨', '🧪', '🛒', '✈️', '💬', '⭐', '🎵', '💰', '🎮', '❤️'];
+const COLOR_NAMES: Record<string, string> = { '#3cb99a': 'Mint', '#3b82f6': 'Blue', '#8b5cf6': 'Violet', '#ec4899': 'Pink', '#f59e0b': 'Amber', '#ef4444': 'Red', '#14b8a6': 'Teal', '#64748b': 'Slate' };
+/** A tiny coloured dot that fits where menu items take an icon. */
+const dotIcon = (c: string) => {
+  const Dot = (() => <span className="menu-dot" style={{ background: c }} />) as unknown as LucideIcon;
+  return Dot;
+};
+
 const FolderItem = memo(function FolderItem({
   folder,
   kids,
+  layout,
   tabsById,
+  foldersById,
   into,
   activeId,
   agentTab,
-  count,
   selected,
 }: {
   folder: Folder;
   kids: string[];
+  layout: Layout;
   tabsById: Map<string, Tab>;
-  into: boolean;
+  foldersById: Map<string, Folder>;
+  into: string | null;
   activeId: string | null;
   agentTab: string | null;
-  count: number;
   selected: Set<string>;
 }) {
   const s = useSortable({ id: `folder:${folder.id}` });
   const head = useDroppable({ id: `folderhead:${folder.id}` });
   const kidsDrop = useDroppable({ id: `fold:${folder.id}`, disabled: folder.collapsed });
-  const { renamingId, setRenaming } = useContext(Ctx);
+  const { renamingId, setRenaming, counts, getState } = useContext(Ctx);
   const openMenu = useContextMenu();
   const renaming = renamingId === folder.id;
+  const count = counts.get(folder.id) ?? 0;
+  const color = folderColor(folder);
   const toggle = () => cmd({ type: 'folder.update', folderId: folder.id, patch: { collapsed: !folder.collapsed } });
   const menu = (e: React.MouseEvent) => {
     e.preventDefault();
+    const st = getState();
+    const siblings = st.folders.filter((f) => f.id !== folder.id && f.spaceId === folder.spaceId && f.pinned === folder.pinned && (f.parentId ?? '') === (folder.parentId ?? ''));
     openMenu(e, [
       { label: 'Rename…', icon: Pencil, onSelect: () => setRenaming(folder.id) },
       { label: folder.collapsed ? 'Expand' : 'Collapse', icon: folder.collapsed ? FolderOpen : FolderIcon, onSelect: toggle },
-      { label: folder.pinned ? 'Move to Today' : 'Move to Pinned', icon: folder.pinned ? PinOff : Pin, onSelect: () => cmd({ type: 'folder.move', folderId: folder.id, pinned: !folder.pinned, beforeId: null }) },
-      { label: 'New folder', icon: FolderPlus, onSelect: () => cmd({ type: 'folder.create', spaceId: folder.spaceId, pinned: folder.pinned }) },
+      {
+        label: 'Colour',
+        icon: dotIcon(color),
+        children: [
+          ...FOLDER_COLORS.map((c) => ({ label: COLOR_NAMES[c] ?? c, icon: dotIcon(c), onSelect: () => cmd({ type: 'folder.update', folderId: folder.id, patch: { color: c } }) })),
+          { sep: true },
+          { label: 'Automatic', onSelect: () => cmd({ type: 'folder.update', folderId: folder.id, patch: { color: null } }) },
+        ],
+      },
+      {
+        label: 'Icon',
+        icon: FolderIcon,
+        children: [
+          { label: 'Folder (default)', icon: FolderIcon, onSelect: () => cmd({ type: 'folder.update', folderId: folder.id, patch: { icon: null } }) },
+          { sep: true },
+          ...FOLDER_EMOJI.map((em) => ({ label: em, onSelect: () => cmd({ type: 'folder.update', folderId: folder.id, patch: { icon: em } }) })),
+        ],
+      },
+      { sep: true },
+      { label: 'New folder inside', icon: FolderPlus, onSelect: () => cmd({ type: 'folder.create', parentId: folder.id }) },
+      siblings.length ? { label: 'Move into folder', icon: FolderIcon, children: siblings.map((f) => ({ label: f.name, icon: dotIcon(folderColor(f)), onSelect: () => cmd({ type: 'folder.nest', folderId: folder.id, parentId: f.id }) })) } : false,
+      folder.parentId ? { label: 'Move out of folder', icon: FolderOpen, onSelect: () => cmd({ type: 'folder.nest', folderId: folder.id, parentId: null }) } : false,
+      !folder.parentId ? { label: folder.pinned ? 'Move to Today' : 'Move to Pinned', icon: folder.pinned ? PinOff : Pin, onSelect: () => cmd({ type: 'folder.move', folderId: folder.id, pinned: !folder.pinned, beforeId: null }) } : false,
       { sep: true },
       { label: 'Delete folder, keep tabs', icon: Trash2, onSelect: () => cmd({ type: 'folder.delete', folderId: folder.id }) },
-      { label: 'Delete folder and close tabs', icon: Trash2, danger: true, onSelect: () => cmd({ type: 'folder.delete', folderId: folder.id, closeTabs: true }) },
-    ]);
+      { label: 'Delete folder and its tabs', icon: Trash2, danger: true, onSelect: () => cmd({ type: 'folder.delete', folderId: folder.id, closeTabs: true }) },
+    ].filter(Boolean) as MenuItem[]);
   };
   return (
     <div ref={s.setNodeRef} style={{ transform: CSS.Translate.toString(s.transform), transition: s.transition }} className={cx(s.isDragging && 'dragging-ghost')}>
@@ -752,13 +838,20 @@ const FolderItem = memo(function FolderItem({
         }}
         {...s.attributes}
         {...s.listeners}
-        className={cx('row folder-head', into && 'drop-into')}
+        className={cx('row folder-head', into === folder.id && 'drop-into')}
+        style={{ '--fc': color } as React.CSSProperties}
         onClick={() => !renaming && toggle()}
         onDoubleClick={() => setRenaming(folder.id)}
         onContextMenu={menu}
       >
         <ChevronRight className={cx('chev', !folder.collapsed && 'open')} size={12} strokeWidth={2.4} style={{ marginRight: -4 }} />
-        {folder.collapsed ? <FolderIcon className="ficon" size={15} strokeWidth={1.8} /> : <FolderOpen className="ficon" size={15} strokeWidth={1.8} />}
+        {folder.icon ? (
+          <span className="femoji">{folder.icon}</span>
+        ) : folder.collapsed ? (
+          <FolderIcon className="ficon" size={15} strokeWidth={1.8} fill="currentColor" fillOpacity={0.18} />
+        ) : (
+          <FolderOpen className="ficon" size={15} strokeWidth={1.8} fill="currentColor" fillOpacity={0.18} />
+        )}
         {renaming ? (
           <RenameInput
             value={folder.name}
@@ -774,8 +867,12 @@ const FolderItem = memo(function FolderItem({
       </div>
       {!folder.collapsed && (
         <SortableContext id={`fold:${folder.id}`} items={kids} strategy={verticalListSortingStrategy}>
-          <div ref={kidsDrop.setNodeRef} className="folder-kids">
+          <div ref={kidsDrop.setNodeRef} className="folder-kids" style={{ '--fc': color } as React.CSSProperties}>
             {kids.map((key) => {
+              if (key.startsWith('folder:')) {
+                const f = foldersById.get(idOf(key));
+                return f ? <FolderItem key={key} folder={f} kids={layout[`fold:${f.id}`] ?? []} layout={layout} tabsById={tabsById} foldersById={foldersById} into={into} activeId={activeId} agentTab={agentTab} selected={selected} /> : null;
+              }
               const t = tabsById.get(idOf(key));
               return t ? <TabRow key={key} tab={t} active={t.id === activeId} agentHere={t.id === agentTab} selected={selected.has(t.id)} /> : null;
             })}
